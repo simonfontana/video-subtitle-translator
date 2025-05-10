@@ -9,7 +9,7 @@ fetch(browser.runtime.getURL("secrets.json"))
     })
     .catch(err => console.error("Failed to load API key:", err));
 
-browser.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+browser.runtime.onMessage.addListener(async (request) => {
     if (request.action === "translate") {
         const translatedText = await translateWithDeepL(request.text);
         return Promise.resolve({ translation: translatedText });

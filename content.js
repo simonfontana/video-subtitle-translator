@@ -1,4 +1,4 @@
-document.addEventListener("click", function (event) {
+document.addEventListener("click", function(event) {
     let clickedElement = event.target;
 
     if (clickedElement && clickedElement.closest('.ytp-caption-segment')) {
