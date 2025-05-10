@@ -2,8 +2,16 @@
   "manifest_version": 2,
   "name": "YouTube Subtitle Translator",
   "version": "1.0",
-  "description": "Click on subtitles to translate words",
-  "permissions": ["activeTab", "storage"],
+  "description": "Click a word in YouTube subtitles to translate it using DeepL.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "https://api-free.deepl.com/*"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
   "content_scripts": [
     {
       "matches": ["*://www.youtube.com/*"],
@@ -11,12 +19,11 @@
       "run_at": "document_idle"
     }
   ],
-  "background": {
-    "scripts": ["background.js"],
-    "persistent": false
-  },
+  "web_accessible_resources": [
+    "secrets.json"
+  ],
   "browser_action": {
-    "default_popup": "popup.html",
+    "default_title": "Subtitle Translator",
     "default_icon": "icon.png"
   }
 }
