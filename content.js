@@ -35,9 +35,44 @@ document.addEventListener("click", function(event) {
 
             browser.runtime.sendMessage({ action: "translate", text: clickedWord }).then(response => {
                 if (response && response.translation) {
-                    alert(`Translation: ${response.translation}`);
+                    showTooltip(response.translation, event.clientX, event.clientY);
                 }
             }).catch(error => console.error("Error sending message:", error));
+
         }
     }
 });
+
+
+function showTooltip(text, x, y) {
+    // Remove existing tooltip
+    const existing = document.getElementById("yt-translate-tooltip");
+    if (existing) existing.remove();
+
+    const tooltip = document.createElement("div");
+    tooltip.id = "yt-translate-tooltip";
+    tooltip.innerText = text;
+
+    Object.assign(tooltip.style, {
+        position: "fixed",
+        top: `${y + 10}px`,
+        left: `${x + 10}px`,
+        background: "rgba(0, 0, 0, 0.8)",
+        color: "white",
+        padding: "6px 10px",
+        borderRadius: "6px",
+        fontSize: "30px",
+        zIndex: 9999,
+        maxWidth: "300px",
+        pointerEvents: "none",
+        boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
+        fontFamily: "Arial, sans-serif"
+    });
+
+    document.body.appendChild(tooltip);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        tooltip.remove();
+    }, 5000);
+}
