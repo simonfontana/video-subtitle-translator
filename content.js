@@ -45,7 +45,6 @@ document.addEventListener("click", function(event) {
 
 
 function showTooltip(text, x, y) {
-    // Remove existing tooltip
     const existing = document.getElementById("yt-translate-tooltip");
     if (existing) existing.remove();
 
@@ -55,23 +54,36 @@ function showTooltip(text, x, y) {
 
     Object.assign(tooltip.style, {
         position: "fixed",
-        top: `${y + 10}px`,
-        left: `${x + 10}px`,
-        background: "rgba(0, 0, 0, 0.8)",
-        color: "white",
-        padding: "6px 10px",
-        borderRadius: "6px",
-        fontSize: "30px",
+        top: "0", // Prevent layout shift
+        left: "0",
+        visibility: "hidden",
+        background: "rgba(0, 0, 0, 0.85)",
+        color: "#fff",
+        padding: "14px 18px",
+        borderRadius: "10px",
+        fontSize: "40px",
+        fontWeight: "500",
+        fontFamily: "Arial, sans-serif",
         zIndex: 9999,
-        maxWidth: "300px",
+        maxWidth: "600px",
+        lineHeight: "1.2",
         pointerEvents: "none",
-        boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
-        fontFamily: "Arial, sans-serif"
+        boxShadow: "0 6px 20px rgba(0,0,0,0.5)",
+        opacity: "0",
+        transition: "opacity 0.3s ease"
     });
 
     document.body.appendChild(tooltip);
 
-    // Auto-remove after 5 seconds
+    // Now position and reveal it without causing layout shift
+    tooltip.style.top = `${y + 10}px`;
+    tooltip.style.left = `${x + 10}px`;
+    tooltip.style.visibility = "visible";
+
+    requestAnimationFrame(() => {
+        tooltip.style.opacity = "1";
+    });
+
     setTimeout(() => {
         tooltip.remove();
     }, 5000);
