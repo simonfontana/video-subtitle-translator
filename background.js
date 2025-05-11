@@ -22,7 +22,9 @@ async function translateWithDeepL(text) {
     const params = new URLSearchParams();
     params.append("auth_key", apiKey);
     params.append("text", text);
-    params.append("source_lang", sourceLang);
+    if (sourceLang !== "auto") {
+        params.append("source_lang", sourceLang);
+    }
     params.append("target_lang", targetLang);
 
     try {
