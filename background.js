@@ -52,3 +52,4 @@ async function translateWithDeepL(text) {
         return "Translation failed";
     }
 }
+
