@@ -1,9 +1,7 @@
 let currentTranslationId = 0;
 let lastTooltip = null;
-let lastHighlightedElement = null;
-let lastOriginalText = null;
+let lastHighlightedSegments = []; // Tracks { el, originalText }
 
-// Main click handler
 document.addEventListener("click", async (event) => {
     const clickedElement = event.target;
     const captionElement = clickedElement?.closest(".ytp-caption-segment");
@@ -11,7 +9,6 @@ document.addEventListener("click", async (event) => {
 
     const translationId = ++currentTranslationId;
 
-    // Extract clicked word from caret
     const caret = document.caretPositionFromPoint(event.clientX, event.clientY);
     if (!caret?.offsetNode?.textContent) return;
 
@@ -24,7 +21,7 @@ document.addEventListener("click", async (event) => {
     let clickedWord = text.slice(start, end).trim().replace(/[.,!?;:]$/, '');
     if (!clickedWord) return;
 
-    // Pause video and track when it resumes
+    // Pause video + cleanup on resume
     const video = document.querySelector("video");
     if (video) {
         video.pause();
@@ -35,51 +32,42 @@ document.addEventListener("click", async (event) => {
         video.addEventListener("play", onResume);
     }
 
-    // Cleanup previous tooltip and highlight
-    cleanup();
+    cleanup(); // Clear previous highlights & tooltips
 
-    // Save original
+    // Highlight word in its segment
     const originalText = captionElement.innerText;
     const safeWord = clickedWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const regex = new RegExp(`\\b(${safeWord})\\b`, "i");
     const highlightedText = originalText.replace(regex, `<span style="background: yellow; color: black;">$1</span>`);
     captionElement.innerHTML = highlightedText;
-
-    lastHighlightedElement = captionElement;
-    lastOriginalText = originalText;
+    lastHighlightedSegments = [{ el: captionElement, originalText }];
 
     // Translate word
     const wordResult = await browser.runtime.sendMessage({ action: "translate", text: clickedWord });
     if (translationId !== currentTranslationId) return;
 
-    // Show tooltip
     showTooltip({
         wordTranslation: wordResult.translation,
         x: event.clientX,
         y: event.clientY,
-        sentenceText: captionElement.innerText,
+        sentenceText: getFullSentenceFromSubtitles(clickedWord, captionElement),
         clickedWord,
-        subtitleElement: captionElement,
-        originalText,
         translationId
     });
 });
 
-// Cleanup tooltip + restore subtitle
 function cleanup() {
     if (lastTooltip) {
         lastTooltip.remove();
         lastTooltip = null;
     }
-    if (lastHighlightedElement && lastOriginalText) {
-        lastHighlightedElement.innerText = lastOriginalText;
-        lastHighlightedElement = null;
-        lastOriginalText = null;
+    for (const { el, originalText } of lastHighlightedSegments) {
+        el.innerText = originalText;
     }
+    lastHighlightedSegments = [];
 }
 
-// Show tooltip with button
-function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, subtitleElement, originalText, translationId }) {
+function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, translationId }) {
     const tooltip = document.createElement("div");
     tooltip.id = "yt-translate-tooltip";
     tooltip.innerHTML = `
@@ -126,19 +114,75 @@ function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, subtitl
     tooltip.querySelector("#translateSentenceBtn").addEventListener("click", async () => {
         tooltip.innerHTML = `<div style="font-size: 18px;">Translating sentence...</div>`;
 
-        const sentenceResult = await browser.runtime.sendMessage({
-            action: "translate",
-            text: sentenceText
-        });
+        const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
+        if (translationId !== currentTranslationId) return;
 
-        if (translationId !== currentTranslationId) return; // Outdated — do nothing
-
-        // Highlight full sentence with clicked word bold
-        const safeWord = clickedWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const regex = new RegExp(`\\b(${safeWord})\\b`, "i");
-        const bolded = sentenceText.replace(regex, `<strong>$1</strong>`);
-        subtitleElement.innerHTML = `<span style="background: yellow; color: black;">${bolded}</span>`;
-
+        highlightSentenceAcrossSegments(clickedWord);
         tooltip.innerHTML = `<div style="font-size: 20px; line-height: 1.4;">${sentenceResult.translation}</div>`;
     });
+}
+
+function getFullSentenceFromSubtitles(clickedWord, clickedElement) {
+    const segments = Array.from(document.querySelectorAll('.ytp-caption-segment'));
+    const text = segments.map(s => s.innerText.trim()).join(" ").replace(/\s+/g, " ");
+    const sentenceRegex = /[^.!?]*[.!?]+["')\]]*|[^.!?]+$/g;
+    const sentences = text.match(sentenceRegex) || [];
+    const lowerClicked = clickedWord.toLowerCase();
+    for (let sentence of sentences) {
+        if (sentence.toLowerCase().includes(lowerClicked)) return sentence.trim();
+    }
+    return clickedElement.innerText.trim();
+}
+
+function highlightSentenceAcrossSegments(clickedWord) {
+    const segments = Array.from(document.querySelectorAll('.ytp-caption-segment'));
+    let fullText = "";
+    const segmentData = [];
+
+    for (let el of segments) {
+        const text = el.innerText.trim();
+        const start = fullText.length;
+        fullText += (fullText.length > 0 ? " " : "") + text;
+        const end = fullText.length;
+        segmentData.push({ el, text, start, end });
+    }
+
+    const sentenceRegex = /[^.!?]*[.!?]+["')\]]*|[^.!?]+$/g;
+    const sentences = fullText.match(sentenceRegex) || [];
+
+    const lowerClicked = clickedWord.toLowerCase();
+    let targetSentence = null;
+    let sentenceStart = 0;
+
+    for (let sentence of sentences) {
+        if (sentence.toLowerCase().includes(lowerClicked)) {
+            targetSentence = sentence.trim();
+            break;
+        }
+        sentenceStart += sentence.length;
+    }
+    if (!targetSentence) return;
+
+    const sentenceEnd = sentenceStart + targetSentence.length;
+
+    lastHighlightedSegments = []; // Track all modified segments
+
+    for (let { el, text, start, end } of segmentData) {
+        const overlapStart = Math.max(start, sentenceStart);
+        const overlapEnd = Math.min(end, sentenceEnd);
+        if (overlapStart >= overlapEnd) continue;
+
+        const segRelativeStart = overlapStart - start;
+        const segRelativeEnd = overlapEnd - start;
+
+        const safeBefore = text.slice(0, segRelativeStart)
+            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const safeHighlight = text.slice(segRelativeStart, segRelativeEnd)
+            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const safeAfter = text.slice(segRelativeEnd)
+            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+        lastHighlightedSegments.push({ el, originalText: el.innerText });
+        el.innerHTML = `${safeBefore}<span style="background: yellow; color: black;">${safeHighlight}</span>${safeAfter}`;
+    }
 }
