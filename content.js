@@ -1,6 +1,6 @@
 let currentTranslationId = 0;
 let lastTooltip = null;
-let lastHighlightedSegments = []; // Tracks { el, originalText }
+let lastHighlightedSegments = []; // Track modified segments for cleanup
 
 document.addEventListener("click", async (event) => {
     const clickedElement = event.target;
@@ -9,16 +9,17 @@ document.addEventListener("click", async (event) => {
 
     const translationId = ++currentTranslationId;
 
+    // Extract clicked word with dash and Unicode-friendly regex
     const caret = document.caretPositionFromPoint(event.clientX, event.clientY);
     if (!caret?.offsetNode?.textContent) return;
 
     const text = caret.offsetNode.textContent;
     let offset = caret.offset;
     let start = offset, end = offset;
-    while (start > 0 && /\w|\p{L}/u.test(text[start - 1])) start--;
-    while (end < text.length && /\w|\p{L}/u.test(text[end])) end++;
+    while (start > 0 && (/\p{L}|\d|-/u.test(text[start - 1]))) start--; // Include dash
+    while (end < text.length && /\p{L}|\d/u.test(text[end])) end++;
 
-    let clickedWord = text.slice(start, end).trim().replace(/[.,!?;:]$/, '');
+    let clickedWord = text.slice(start, end).trim().replace(/[.,!?;:]/g, ''); // Remove punctuation
     if (!clickedWord) return;
 
     // Pause video + cleanup on resume
@@ -35,12 +36,7 @@ document.addEventListener("click", async (event) => {
     cleanup(); // Clear previous highlights & tooltips
 
     // Highlight word in its segment
-    const originalText = captionElement.innerText;
-    const safeWord = clickedWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`\\b(${safeWord})\\b`, "i");
-    const highlightedText = originalText.replace(regex, `<span style="background: yellow; color: black;">$1</span>`);
-    captionElement.innerHTML = highlightedText;
-    lastHighlightedSegments = [{ el: captionElement, originalText }];
+    highlightWordInSegment(captionElement, clickedWord);
 
     // Translate word
     const wordResult = await browser.runtime.sendMessage({ action: "translate", text: clickedWord });
@@ -65,6 +61,19 @@ function cleanup() {
         el.innerText = originalText;
     }
     lastHighlightedSegments = [];
+}
+
+function highlightWordInSegment(segment, clickedWord) {
+    const originalText = segment.innerText;
+    const safeWord = clickedWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const wordRegex = new RegExp(`(^|\\s)(${safeWord})(?=\\s|$|[.,!?])`, "iu");
+
+    const highlightedHTML = originalText.replace(wordRegex, (match, prefix, word) => {
+        return `${prefix}<span class="highlight-translate">${word}</span>`;
+    });
+
+    segment.innerHTML = highlightedHTML;
+    lastHighlightedSegments = [{ el: segment, originalText }];
 }
 
 function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, translationId }) {
@@ -140,34 +149,38 @@ function highlightSentenceAcrossSegments(clickedWord) {
     const segmentData = [];
 
     for (let el of segments) {
-        const text = el.innerText.trim();
+        const text = el.innerText;
         const start = fullText.length;
-        fullText += (fullText.length > 0 ? " " : "") + text;
+        fullText += (fullText ? " " : "") + text;
         const end = fullText.length;
         segmentData.push({ el, text, start, end });
     }
 
-    const sentenceRegex = /[^.!?]*[.!?]+["')\]]*|[^.!?]+$/g;
-    const sentences = fullText.match(sentenceRegex) || [];
-
     const lowerClicked = clickedWord.toLowerCase();
-    let targetSentence = null;
-    let sentenceStart = 0;
+    const fullLowerText = fullText.toLowerCase();
+    const clickedIndex = fullLowerText.indexOf(lowerClicked);
+    if (clickedIndex === -1) return;
 
-    for (let sentence of sentences) {
-        if (sentence.toLowerCase().includes(lowerClicked)) {
-            targetSentence = sentence.trim();
-            break;
-        }
-        sentenceStart += sentence.length;
-    }
-    if (!targetSentence) return;
+    // Find sentence start: last '.', '!', '?', or '-' (for dialogue)
+    const beforeText = fullLowerText.slice(0, clickedIndex);
+    let sentenceStart = Math.max(
+        beforeText.lastIndexOf('.'),
+        beforeText.lastIndexOf('!'),
+        beforeText.lastIndexOf('?'),
+        beforeText.lastIndexOf('-')
+    ) + 1; // +1 to skip punctuation
+    if (sentenceStart < 0) sentenceStart = 0;
 
-    const sentenceEnd = sentenceStart + targetSentence.length;
+    // Find sentence end: next '.', '!', '?', or end of text
+    const afterText = fullLowerText.slice(clickedIndex + clickedWord.length);
+    let sentenceEnd = afterText.search(/[.!?-]/);
+    sentenceEnd = sentenceEnd !== -1
+        ? clickedIndex + clickedWord.length + sentenceEnd + 1
+        : fullText.length;
 
-    lastHighlightedSegments = []; // Track all modified segments
+    lastHighlightedSegments = [];
 
-    for (let { el, text, start, end } of segmentData) {
+    for (const { el, text, start, end } of segmentData) {
         const overlapStart = Math.max(start, sentenceStart);
         const overlapEnd = Math.min(end, sentenceEnd);
         if (overlapStart >= overlapEnd) continue;
@@ -175,14 +188,11 @@ function highlightSentenceAcrossSegments(clickedWord) {
         const segRelativeStart = overlapStart - start;
         const segRelativeEnd = overlapEnd - start;
 
-        const safeBefore = text.slice(0, segRelativeStart)
-            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        const safeHighlight = text.slice(segRelativeStart, segRelativeEnd)
-            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        const safeAfter = text.slice(segRelativeEnd)
-            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const before = text.slice(0, segRelativeStart);
+        const match = text.slice(segRelativeStart, segRelativeEnd);
+        const after = text.slice(segRelativeEnd);
 
-        lastHighlightedSegments.push({ el, originalText: el.innerText });
-        el.innerHTML = `${safeBefore}<span style="background: yellow; color: black;">${safeHighlight}</span>${safeAfter}`;
+        el.innerHTML = `${before}<span class="highlight-translate">${match}</span>${after}`;
+        lastHighlightedSegments.push({ el, originalText: text });
     }
 }
