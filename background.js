@@ -1,7 +1,16 @@
-browser.runtime.onMessage.addListener(async (request) => {
+browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "translate") {
-        const translatedText = await translateWithDeepL(request.text);
-        return Promise.resolve({ translation: translatedText });
+        console.log(`[DEBUG] Received translation request: "${request.text}"`);
+        translateWithDeepL(request.text)
+            .then(translatedText => {
+                console.log(`[DEBUG] Translation successful. Response: "${translatedText}"`);
+                sendResponse({ translation: translatedText });
+            })
+            .catch(error => {
+                console.error("[DEBUG] Translation failed:", error);
+                sendResponse({ translation: "Translation failed" });
+            });
+        return true; // Required for async response
     }
 });
 
@@ -10,7 +19,6 @@ async function translateWithDeepL(text) {
 
     const apiKey = settings.deeplApiKey;
     if (!apiKey) {
-        console.error("No DeepL API key set");
         return "Please enter your DeepL API key in the extension popup.";
     }
 
@@ -36,15 +44,16 @@ async function translateWithDeepL(text) {
         });
 
         const data = await response.json();
+        console.log("[DEBUG] DeepL API raw response:", data);
 
         if (data.translations && data.translations.length > 0) {
             return data.translations[0].text;
         } else {
-            console.error("DeepL response error:", data);
+            console.error("[DEBUG] DeepL response error:", data);
             return "Translation error";
         }
     } catch (error) {
-        console.error("DeepL API error:", error);
+        console.error("[DEBUG] DeepL API fetch error:", error);
         return "Translation failed";
     }
 }
