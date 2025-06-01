@@ -79,13 +79,8 @@ function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, transla
     const subtitleFontSize = subtitleElement ? window.getComputedStyle(subtitleElement).fontSize : "16px";
 
     tooltip.innerHTML = `
-        <div style="position: relative; display: inline-block;">
-            <div id="sentenceButtonContainer" style="display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 6px; z-index: 10000;">
-                <button id="translateSentenceBtn" style="padding: 4px 8px; white-space: nowrap;">Translate full sentence</button>
-            </div>
-            <div id="translatedWord" style="font-size: ${subtitleFontSize}; font-weight: bold; cursor: pointer;">
-                ${wordTranslation}
-            </div>
+        <div id="translatedWord" style="font-size: ${subtitleFontSize}; font-weight: bold; cursor: pointer;">
+            ${wordTranslation}
         </div>
     `;
 
@@ -120,12 +115,7 @@ function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, transla
     });
 
     const translatedWordElement = tooltip.querySelector("#translatedWord");
-    const sentenceButtonContainer = tooltip.querySelector("#sentenceButtonContainer");
-    translatedWordElement.addEventListener("click", () => {
-        sentenceButtonContainer.style.display = "block";
-    });
-
-    tooltip.querySelector("#translateSentenceBtn").addEventListener("click", async () => {
+    translatedWordElement.addEventListener("click", async () => {
         console.log(`[DEBUG] Sending translation request for full sentence: "${sentenceText}"`);
         tooltip.innerHTML = `<div style="font-size: ${subtitleFontSize}; line-height: 1.4;" id="translatedSentence"></div>`;
         const sentenceContainer = tooltip.querySelector("#translatedSentence");
