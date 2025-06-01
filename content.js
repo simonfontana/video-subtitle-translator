@@ -73,26 +73,68 @@ function highlightWordInSegment(segment, clickedWord) {
 function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, translationId }) {
     const tooltip = document.createElement("div");
     tooltip.id = "yt-translate-tooltip";
-    tooltip.innerHTML = `
-        <div style="font-size: 32px; font-weight: bold;">${wordTranslation}</div>
-        <button id="translateSentenceBtn" style="margin-top: 10px; padding: 6px 10px;">Translate full sentence</button>
-    `;
-    Object.assign(tooltip.style, {
-        position: "fixed", top: `${y + 10}px`, left: `${x + 10}px`,
-        background: "rgba(0, 0, 0, 0.85)", color: "#fff", padding: "10px",
-        borderRadius: "8px", zIndex: 9999, maxWidth: "600px"
-    });
-    document.body.appendChild(tooltip); lastTooltip = tooltip;
 
-    requestAnimationFrame(() => { tooltip.style.opacity = "1"; });
+    const subtitleElement = document.querySelector('.ytp-caption-segment');
+    const subtitleRect = subtitleElement ? subtitleElement.getBoundingClientRect() : null;
+    const subtitleFontSize = subtitleElement ? window.getComputedStyle(subtitleElement).fontSize : "16px";
+
+    tooltip.innerHTML = `
+        <div style="position: relative; display: inline-block;">
+            <div id="sentenceButtonContainer" style="display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 6px; z-index: 10000;">
+                <button id="translateSentenceBtn" style="padding: 4px 8px; white-space: nowrap;">Translate full sentence</button>
+            </div>
+            <div id="translatedWord" style="font-size: ${subtitleFontSize}; font-weight: bold; cursor: pointer;">
+                ${wordTranslation}
+            </div>
+        </div>
+    `;
+
+
+    Object.assign(tooltip.style, {
+        position: "fixed",
+        background: "rgba(0, 0, 0, 0.85)",
+        color: "#fff",
+        padding: "10px",
+        borderRadius: "8px",
+        zIndex: 9999,
+        maxWidth: "600px",
+        transform: "translateX(-50%)",
+        textAlign: "center",
+        fontFamily: subtitleElement ? window.getComputedStyle(subtitleElement).fontFamily : "Arial, sans-serif",
+        opacity: "0",
+    });
+
+    document.body.appendChild(tooltip);
+    lastTooltip = tooltip;
+
+    requestAnimationFrame(() => {
+        const tooltipRect = tooltip.getBoundingClientRect();
+        let tooltipTop = y + 10;
+        let tooltipLeft = x + 10;
+        if (subtitleRect) {
+            tooltipTop = subtitleRect.top - tooltipRect.height - 10;
+            tooltipLeft = subtitleRect.left + subtitleRect.width / 2;
+        }
+        tooltip.style.top = `${tooltipTop}px`;
+        tooltip.style.left = `${tooltipLeft}px`;
+        tooltip.style.opacity = "1";
+    });
+
+    const translatedWordElement = tooltip.querySelector("#translatedWord");
+    const sentenceButtonContainer = tooltip.querySelector("#sentenceButtonContainer");
+    translatedWordElement.addEventListener("click", () => {
+        sentenceButtonContainer.style.display = "block";
+    });
+
+
 
     tooltip.querySelector("#translateSentenceBtn").addEventListener("click", async () => {
         console.log(`[DEBUG] Sending translation request for full sentence: "${sentenceText}"`);
-        tooltip.innerHTML = `<div style="font-size: 18px;">Translating sentence...</div>`;
+        tooltip.innerHTML = `<div style="font-size: ${subtitleFontSize};">Translating sentence...</div>`;
         const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
         if (translationId !== currentTranslationId) return;
         highlightSentenceAcrossSegments(sentenceText);
-        tooltip.innerHTML = `<div style="font-size: 20px; line-height: 1.4;">${sentenceResult.translation}</div>`;
+        tooltip.innerHTML = `<div style="font-size: ${subtitleFontSize}; line-height: 1.4;">${sentenceResult.translation}</div>`;
     });
 }
 
