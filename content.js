@@ -1,12 +1,35 @@
 let currentTranslationId = 0;
 let lastTooltip = null;
 let lastHighlightedSegments = [];
+let clickTimer = null;
 
-document.addEventListener("click", async (event) => {
-    const clickedElement = event.target;
-    const captionElement = clickedElement?.closest(".ytp-caption-segment");
-    if (!captionElement) return;
+document.addEventListener("click", (event) => {
+    const clickedElement = event.target.closest(".ytp-caption-segment");
+    if (!clickedElement) return;
 
+    if (clickTimer) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+    }
+
+    clickTimer = setTimeout(() => {
+        handleClick(event, clickedElement);
+    }, 250); // 250ms delay to detect double-click
+});
+
+document.addEventListener("dblclick", (event) => {
+    const clickedElement = event.target.closest(".ytp-caption-segment");
+    if (!clickedElement) return;
+
+    if (clickTimer) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+    }
+
+    handleDoubleClick(event, clickedElement);
+});
+
+async function handleClick(event, captionElement) {
     const translationId = ++currentTranslationId;
 
     const caret = document.caretPositionFromPoint(event.clientX, event.clientY);
@@ -21,7 +44,7 @@ document.addEventListener("click", async (event) => {
     const clickedWord = text.slice(start, end).trim().replace(/[.,!?;:]/g, '');
     if (!clickedWord) return;
 
-    console.log(`[DEBUG] Clicked word: "${clickedWord}"`);
+    console.log(`[DEBUG] Single click on word: "${clickedWord}"`);
 
     const video = document.querySelector("video");
     if (video) {
@@ -34,13 +57,10 @@ document.addEventListener("click", async (event) => {
 
     highlightWordInSegment(captionElement, clickedWord);
 
-    console.log(`[DEBUG] Sending translation request for word: "${clickedWord}"`);
     const wordResult = await browser.runtime.sendMessage({ action: "translate", text: clickedWord });
     if (translationId !== currentTranslationId) return;
 
     const sentenceText = getFullSentenceFromSubtitles(clickedWord, captionElement);
-    console.log(`[DEBUG] Detected sentence for translation: "${sentenceText}"`);
-
     showTooltip({
         wordTranslation: wordResult.translation,
         x: event.clientX,
@@ -49,7 +69,33 @@ document.addEventListener("click", async (event) => {
         clickedWord,
         translationId
     });
-});
+}
+
+async function handleDoubleClick(event, captionElement) {
+    const translationId = ++currentTranslationId;
+    const sentenceText = getFullSentenceFromSubtitles(captionElement.innerText.trim(), captionElement);
+    console.log(`[DEBUG] Double-click detected. Full sentence: "${sentenceText}"`);
+
+    const video = document.querySelector("video");
+    if (video) {
+        video.pause();
+        const onResume = () => { cleanup(); video.removeEventListener("play", onResume); };
+        video.addEventListener("play", onResume);
+    }
+
+    cleanup();
+    highlightSentenceAcrossSegments(sentenceText);
+
+    const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
+    showTooltip({
+        wordTranslation: sentenceResult.translation,
+        x: event.clientX,
+        y: event.clientY,
+        sentenceText,
+        clickedWord: sentenceText,
+        translationId
+    });
+}
 
 function cleanup() {
     if (lastTooltip) { lastTooltip.remove(); lastTooltip = null; }
@@ -114,9 +160,9 @@ function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, transla
         tooltip.style.opacity = "1";
     });
 
-    const translatedWordElement = tooltip.querySelector("#translatedWord");
+    translatedWordElement = tooltip.querySelector("#translatedWord");
     translatedWordElement.addEventListener("click", async () => {
-        console.log(`[DEBUG] Sending translation request for full sentence: "${sentenceText}"`);
+        console.log(`[DEBUG] Translated word clicked. Full sentence: "${sentenceText}"`);
         tooltip.innerHTML = `<div style="font-size: ${subtitleFontSize}; line-height: 1.4;" id="translatedSentence"></div>`;
         const sentenceContainer = tooltip.querySelector("#translatedSentence");
         const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
@@ -201,4 +247,3 @@ function highlightSentenceAcrossSegments(sentenceText) {
         lastHighlightedSegments.push({ el, originalText: text });
     }
 }
-
