@@ -1,7 +1,8 @@
 browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "translate") {
         console.log(`[DEBUG] Received translation request: "${request.text}"`);
-        translateWithDeepL(request.text)
+        const reverse = request.reverse || false;
+        translateWithDeepL(request.text, reverse)
             .then(translatedText => {
                 console.log(`[DEBUG] Translation successful. Response: "${translatedText}"`);
                 sendResponse({ translation: translatedText });
@@ -14,16 +15,17 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-async function translateWithDeepL(text) {
+async function translateWithDeepL(text, reverse = false) {
     const settings = await browser.storage.local.get(["sourceLang", "targetLang", "deeplApiKey"]);
 
     const apiKey = settings.deeplApiKey;
     if (!apiKey) {
+        console.error("[DEBUG] No DeepL API key set");
         return "Please enter your DeepL API key in the extension popup.";
     }
 
-    const sourceLang = settings.sourceLang || "SV";
-    const targetLang = settings.targetLang || "EN";
+    const sourceLang = reverse ? settings.targetLang : settings.sourceLang || "SV";
+    const targetLang = reverse ? settings.sourceLang || "SV" : settings.targetLang || "EN";
 
     const url = "https://api-free.deepl.com/v2/translate";
 

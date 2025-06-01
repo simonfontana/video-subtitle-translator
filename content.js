@@ -89,7 +89,6 @@ function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, transla
         </div>
     `;
 
-
     Object.assign(tooltip.style, {
         position: "fixed",
         background: "rgba(0, 0, 0, 0.85)",
@@ -126,15 +125,40 @@ function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, transla
         sentenceButtonContainer.style.display = "block";
     });
 
-
-
     tooltip.querySelector("#translateSentenceBtn").addEventListener("click", async () => {
         console.log(`[DEBUG] Sending translation request for full sentence: "${sentenceText}"`);
-        tooltip.innerHTML = `<div style="font-size: ${subtitleFontSize};">Translating sentence...</div>`;
+        tooltip.innerHTML = `<div style="font-size: ${subtitleFontSize}; line-height: 1.4;" id="translatedSentence"></div>`;
+        const sentenceContainer = tooltip.querySelector("#translatedSentence");
         const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
         if (translationId !== currentTranslationId) return;
         highlightSentenceAcrossSegments(sentenceText);
-        tooltip.innerHTML = `<div style="font-size: ${subtitleFontSize}; line-height: 1.4;">${sentenceResult.translation}</div>`;
+
+        const words = sentenceResult.translation.split(/\s+/);
+        sentenceContainer.innerHTML = words.map(word =>
+            `<span class="translated-word" style="cursor: pointer; position: relative; margin-right: 4px;">${word}</span>`
+        ).join(' ');
+
+        sentenceContainer.querySelectorAll('.translated-word').forEach(span => {
+            span.addEventListener('click', async () => {
+                const clickedWord = span.textContent.trim().replace(/[.,!?;:]/g, '');
+                console.log(`[DEBUG] Translating word back to source: "${clickedWord}"`);
+                const reverseTranslation = await browser.runtime.sendMessage({ action: "translate", text: clickedWord, reverse: true });
+
+                let popup = span.querySelector('.reverse-translation');
+                if (!popup) {
+                    popup = document.createElement('div');
+                    popup.className = 'reverse-translation';
+                    Object.assign(popup.style, {
+                        position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+                        background: 'rgba(0, 0, 0, 0.85)', color: '#fff', padding: '2px 6px',
+                        borderRadius: '4px', whiteSpace: 'nowrap', fontSize: 'smaller', marginBottom: '4px',
+                        zIndex: 10000
+                    });
+                    span.appendChild(popup);
+                }
+                popup.textContent = reverseTranslation.translation;
+            });
+        });
     });
 }
 
@@ -187,3 +211,4 @@ function highlightSentenceAcrossSegments(sentenceText) {
         lastHighlightedSegments.push({ el, originalText: text });
     }
 }
+
