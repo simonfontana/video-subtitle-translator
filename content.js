@@ -1,9 +1,35 @@
 const SITE_CONFIGS = {
     "www.youtube.com": {
         subtitleSelector: ".ytp-caption-segment",
+        suppressEvents: true, // suppress mousedown/pointerdown so we beat YouTube's handlers
+        getVideoElement() {
+            return document.querySelector("video");
+        },
+        pauseVideo() {
+            const video = this.getVideoElement();
+            if (video) video.pause();
+        },
+        resumeVideo() {
+            const video = this.getVideoElement();
+            if (video) video.play();
+        },
+        onResume(callback) {
+            const video = this.getVideoElement();
+            if (!video) return () => {};
+            const handler = () => { callback(); video.removeEventListener("play", handler); };
+            video.addEventListener("play", handler);
+            return () => video.removeEventListener("play", handler);
+        },
     },
     // Add more sites here, e.g.:
-    // "www.netflix.com": { subtitleSelector: ".player-timedtext-text-container span" },
+    // "www.netflix.com": {
+    //     subtitleSelector: ".player-timedtext-text-container span",
+    //     suppressEvents: false,
+    //     getVideoElement() { return document.querySelector("video"); },
+    //     pauseVideo() { /* Netflix player API */ },
+    //     resumeVideo() { /* Netflix player API */ },
+    //     onResume(callback) { /* Netflix player API */ return () => {}; },
+    // },
 };
 
 const siteConfig = SITE_CONFIGS[window.location.hostname];
@@ -15,13 +41,15 @@ let lastTooltip = null;
 let lastHighlightedSegments = [];
 let clickTimer = null;
 
-for (const eventType of ["mousedown", "pointerdown"]) {
-    document.addEventListener(eventType, (event) => {
-        if (event.target.closest(SUBTITLE_SELECTOR)) {
-            event.preventDefault();
-            event.stopPropagation();
-        }
-    }, true); // capture phase so we beat YouTube's handlers
+if (siteConfig.suppressEvents) {
+    for (const eventType of ["mousedown", "pointerdown"]) {
+        document.addEventListener(eventType, (event) => {
+            if (event.target.closest(SUBTITLE_SELECTOR)) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        }, true); // capture phase so we beat the site's own handlers
+    }
 }
 
 document.addEventListener("click", (event) => {
@@ -69,12 +97,8 @@ async function handleClick(caret, clientX, clientY, captionElement) {
 
     console.log(`[DEBUG] Single click on word: "${clickedWord}"`);
 
-    const video = document.querySelector("video");
-    if (video) {
-        video.pause();
-        const onResume = () => { cleanup(); video.removeEventListener("play", onResume); };
-        video.addEventListener("play", onResume);
-    }
+    siteConfig.pauseVideo();
+    siteConfig.onResume(() => cleanup());
 
     cleanup();
 
@@ -98,12 +122,8 @@ async function handleDoubleClick(event, captionElement) {
     const sentenceText = getFullSentenceFromSubtitles(captionElement.innerText.trim(), captionElement);
     console.log(`[DEBUG] Double-click detected. Full sentence: "${sentenceText}"`);
 
-    const video = document.querySelector("video");
-    if (video) {
-        video.pause();
-        const onResume = () => { cleanup(); video.removeEventListener("play", onResume); };
-        video.addEventListener("play", onResume);
-    }
+    siteConfig.pauseVideo();
+    siteConfig.onResume(() => cleanup());
 
     cleanup();
     highlightSentenceAcrossSegments(sentenceText);
