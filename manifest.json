@@ -17,7 +17,8 @@
     "content_scripts": [
         {
             "matches": [
-                "*://www.youtube.com/*"
+                "*://www.youtube.com/*",
+                "*://www.svtplay.se/*"
             ],
             "js": [
                 "content.js"

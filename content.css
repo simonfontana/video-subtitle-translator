@@ -2,3 +2,18 @@
     background: yellow;
     color: black;
 }
+
+/* Preserve subtitle styling when we inject highlight spans */
+.vtt-cue-teletext .highlight-translate {
+    color: inherit;
+    background: rgba(255, 255, 0, 0.4);
+    font-size: inherit;
+}
+
+/* SVT Play: subtitle elements and all their ancestors up to the player have pointer-events:none —
+   override the entire chain so elementsFromPoint() and clicks can reach them */
+.vtt-cue-teletext,
+.vtt-cue-teletext *,
+div:has(.vtt-cue-teletext) {
+    pointer-events: auto !important;
+}
