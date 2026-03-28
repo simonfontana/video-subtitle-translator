@@ -66,6 +66,22 @@ function findSubtitleAt(event) {
     return null;
 }
 
+// Wait for subtitle DOM to settle after an action (e.g. pause) that may trigger a site re-render.
+// Resolves immediately if no mutation occurs within 150ms, or after the first mutation settles.
+function waitForSubtitleSettle() {
+    return new Promise(resolve => {
+        const container = document.querySelector(SUBTITLE_SELECTOR)?.parentElement;
+        if (!container) { resolve(); return; }
+        let timer = setTimeout(done, 150);
+        const observer = new MutationObserver(() => {
+            clearTimeout(timer);
+            timer = setTimeout(done, 50);
+        });
+        observer.observe(container, { childList: true, subtree: true, characterData: true });
+        function done() { observer.disconnect(); resolve(); }
+    });
+}
+
 // Get caret position within a subtitle element, temporarily hiding any overlay elements on top
 function caretInSubtitle(x, y, subtitleEl) {
     const direct = document.caretPositionFromPoint(x, y);
@@ -149,12 +165,17 @@ async function handleClick(caret, clientX, clientY, captionElement) {
 
     cleanup();
 
-    highlightWordInSegment(captionElement, clickedWord);
+    // Wait for the site to finish any subtitle re-render triggered by pause
+    await waitForSubtitleSettle();
+
+    // Re-query subtitle element in case the site re-rendered the DOM after pause
+    const currentElement = document.querySelector(SUBTITLE_SELECTOR) || captionElement;
+    highlightWordInSegment(currentElement, clickedWord);
 
     const wordResult = await browser.runtime.sendMessage({ action: "translate", text: clickedWord });
     if (translationId !== currentTranslationId) return;
 
-    const sentenceText = getFullSentenceFromSubtitles(clickedWord, captionElement);
+    const sentenceText = getFullSentenceFromSubtitles(clickedWord, currentElement);
     showTooltip({
         wordTranslation: wordResult.translation,
         x: clientX,
