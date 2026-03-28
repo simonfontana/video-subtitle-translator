@@ -1,8 +1,8 @@
 {
     "manifest_version": 2,
-    "name": "YouTube Subtitle Translator",
+    "name": "Subtitle Translator",
     "version": "1.0",
-    "description": "Click a word in YouTube subtitles to translate it using DeepL.",
+    "description": "Click a word in video subtitles to translate it using DeepL.",
     "permissions": [
         "activeTab",
         "storage",

@@ -1,10 +1,22 @@
+const SITE_CONFIGS = {
+    "www.youtube.com": {
+        subtitleSelector: ".ytp-caption-segment",
+    },
+    // Add more sites here, e.g.:
+    // "www.netflix.com": { subtitleSelector: ".player-timedtext-text-container span" },
+};
+
+const siteConfig = SITE_CONFIGS[window.location.hostname];
+if (!siteConfig) throw new Error(`[subtitle-translator] No config for ${window.location.hostname}`);
+const SUBTITLE_SELECTOR = siteConfig.subtitleSelector;
+
 let currentTranslationId = 0;
 let lastTooltip = null;
 let lastHighlightedSegments = [];
 let clickTimer = null;
 
 document.addEventListener("click", (event) => {
-    const clickedElement = event.target.closest(".ytp-caption-segment");
+    const clickedElement = event.target.closest(SUBTITLE_SELECTOR);
     if (!clickedElement) return;
 
     if (clickTimer) {
@@ -18,7 +30,7 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("dblclick", (event) => {
-    const clickedElement = event.target.closest(".ytp-caption-segment");
+    const clickedElement = event.target.closest(SUBTITLE_SELECTOR);
     if (!clickedElement) return;
 
     if (clickTimer) {
@@ -118,9 +130,9 @@ function highlightWordInSegment(segment, clickedWord) {
 
 function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, translationId }) {
     const tooltip = document.createElement("div");
-    tooltip.id = "yt-translate-tooltip";
+    tooltip.id = "subtitle-translate-tooltip";
 
-    const subtitleElement = document.querySelector('.ytp-caption-segment');
+    const subtitleElement = document.querySelector(SUBTITLE_SELECTOR);
     const subtitleRect = subtitleElement ? subtitleElement.getBoundingClientRect() : null;
     const subtitleFontSize = subtitleElement ? window.getComputedStyle(subtitleElement).fontSize : "16px";
 
@@ -199,7 +211,7 @@ function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, transla
 }
 
 function getFullSentenceFromSubtitles(clickedWord, clickedElement) {
-    const segments = Array.from(document.querySelectorAll('.ytp-caption-segment'));
+    const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
     const text = segments.map(s => s.innerText.trim()).join(" ").replace(/\s+/g, " ");
     const sentenceRegex = /[^.!?]*[.!?]+["')\]]*|[^.!?]+$/g;
     const sentences = text.match(sentenceRegex) || [];
@@ -211,7 +223,7 @@ function getFullSentenceFromSubtitles(clickedWord, clickedElement) {
 }
 
 function highlightSentenceAcrossSegments(sentenceText) {
-    const segments = Array.from(document.querySelectorAll('.ytp-caption-segment'));
+    const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
     let fullText = "";
     const segmentData = [];
 

@@ -30,7 +30,6 @@ async function translateWithDeepL(text, reverse = false) {
     const url = "https://api-free.deepl.com/v2/translate";
 
     const params = new URLSearchParams();
-    params.append("auth_key", apiKey);
     params.append("text", text);
     if (sourceLang !== "auto") {
         params.append("source_lang", sourceLang);
@@ -40,7 +39,10 @@ async function translateWithDeepL(text, reverse = false) {
     try {
         const response = await fetch(url, {
             method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": `DeepL-Auth-Key ${apiKey}`
+            },
             body: params.toString(),
             mode: "cors"
         });

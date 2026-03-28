@@ -24,6 +24,7 @@ saveBtn.addEventListener("click", async () => {
     statusMsg.textContent = "Validating API key...";
     statusMsg.style.color = "black";
 
+    console.log("Validating key");
     const valid = await validateApiKey(apiKey);
     if (!valid) {
         statusMsg.textContent = "Invalid API key.";
@@ -48,7 +49,6 @@ saveBtn.addEventListener("click", async () => {
 async function validateApiKey(key) {
     const url = "https://api-free.deepl.com/v2/translate";
     const params = new URLSearchParams();
-    params.append("auth_key", key);
     params.append("text", "test");
     params.append("source_lang", "EN");
     params.append("target_lang", "DE");
@@ -56,7 +56,10 @@ async function validateApiKey(key) {
     try {
         const res = await fetch(url, {
             method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": `DeepL-Auth-Key ${key}`
+            },
             body: params.toString()
         });
 
