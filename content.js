@@ -15,9 +15,21 @@ let lastTooltip = null;
 let lastHighlightedSegments = [];
 let clickTimer = null;
 
+for (const eventType of ["mousedown", "pointerdown"]) {
+    document.addEventListener(eventType, (event) => {
+        if (event.target.closest(SUBTITLE_SELECTOR)) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    }, true); // capture phase so we beat YouTube's handlers
+}
+
 document.addEventListener("click", (event) => {
     const clickedElement = event.target.closest(SUBTITLE_SELECTOR);
     if (!clickedElement) return;
+
+    // Capture caret position immediately — DOM may change before the 250ms timeout fires
+    const caret = document.caretPositionFromPoint(event.clientX, event.clientY);
 
     if (clickTimer) {
         clearTimeout(clickTimer);
@@ -25,7 +37,7 @@ document.addEventListener("click", (event) => {
     }
 
     clickTimer = setTimeout(() => {
-        handleClick(event, clickedElement);
+        handleClick(caret, event.clientX, event.clientY, clickedElement);
     }, 250); // 250ms delay to detect double-click
 });
 
@@ -41,10 +53,9 @@ document.addEventListener("dblclick", (event) => {
     handleDoubleClick(event, clickedElement);
 });
 
-async function handleClick(event, captionElement) {
+async function handleClick(caret, clientX, clientY, captionElement) {
     const translationId = ++currentTranslationId;
 
-    const caret = document.caretPositionFromPoint(event.clientX, event.clientY);
     if (!caret?.offsetNode?.textContent) return;
 
     const text = caret.offsetNode.textContent;
@@ -75,10 +86,9 @@ async function handleClick(event, captionElement) {
     const sentenceText = getFullSentenceFromSubtitles(clickedWord, captionElement);
     showTooltip({
         wordTranslation: wordResult.translation,
-        x: event.clientX,
-        y: event.clientY,
+        x: clientX,
+        y: clientY,
         sentenceText,
-        clickedWord,
         translationId
     });
 }
@@ -104,7 +114,6 @@ async function handleDoubleClick(event, captionElement) {
         x: event.clientX,
         y: event.clientY,
         sentenceText,
-        clickedWord: sentenceText,
         translationId
     });
 }
@@ -121,14 +130,14 @@ function highlightWordInSegment(segment, clickedWord) {
     const originalText = segment.innerText;
     const safeWord = clickedWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const wordRegex = new RegExp(`(^|\\s)(${safeWord})(?=\\s|$|[.,!?])`, "iu");
-    const highlightedHTML = originalText.replace(wordRegex, (match, prefix, word) => {
+    const highlightedHTML = originalText.replace(wordRegex, (_match, prefix, word) => {
         return `${prefix}<span class="highlight-translate">${word}</span>`;
     });
     segment.innerHTML = highlightedHTML;
     lastHighlightedSegments = [{ el: segment, originalText }];
 }
 
-function showTooltip({ wordTranslation, x, y, sentenceText, clickedWord, translationId }) {
+function showTooltip({ wordTranslation, x, y, sentenceText, translationId }) {
     const tooltip = document.createElement("div");
     tooltip.id = "subtitle-translate-tooltip";
 
