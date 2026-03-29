@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Subtitle Translator",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Click a word in video subtitles to translate it using DeepL.",
   "permissions": [
     "activeTab",
@@ -29,15 +29,17 @@
       "run_at": "document_idle"
     }
   ],
-"browser_specific_settings": {
+  "browser_specific_settings": {
     "gecko": {
-        "id": "{10f200c0-2595-4061-bde7-2c7d987e57c7}",
-        "data_collection_permissions": {
-            "required": ["none"],
-            "optional": []
-        }
+      "id": "{10f200c0-2595-4061-bde7-2c7d987e57c7}",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ],
+        "optional": []
+      }
     }
-},
+  },
   "browser_action": {
     "default_title": "Subtitle Translator",
     "default_popup": "popup.html",
