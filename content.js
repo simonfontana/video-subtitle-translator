@@ -158,7 +158,10 @@ async function handleClick(caret, clientX, clientY, captionElement) {
     const clickedWord = text.slice(start, end).trim().replace(/[.,!?;:]/g, '');
     if (!clickedWord) return;
 
-    console.log(`[DEBUG] Single click on word: "${clickedWord}"`);
+    // Calculate the clicked word's global offset across all subtitle segments before pause
+    const globalOffset = getGlobalTextOffset(captionElement, caret.offsetNode, start);
+
+    console.log(`[DEBUG] Single click on word: "${clickedWord}" at global offset ${globalOffset}`);
 
     siteConfig.pauseVideo();
     siteConfig.onResume(() => cleanup());
@@ -168,10 +171,9 @@ async function handleClick(caret, clientX, clientY, captionElement) {
     // Wait for the site to finish any subtitle re-render triggered by pause
     await waitForSubtitleSettle();
 
-    // Re-query subtitle elements in case the site re-rendered the DOM after pause
-    const segments = document.querySelectorAll(SUBTITLE_SELECTOR);
-    const currentElement = findSegmentContaining(segments, clickedWord) || captionElement;
-    highlightWordInSegment(currentElement, clickedWord);
+    // Re-query subtitle elements and highlight the correct occurrence
+    const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
+    const currentElement = highlightWordAcrossSegments(segments, clickedWord, globalOffset) || captionElement;
 
     const wordResult = await browser.runtime.sendMessage({ action: "translate", text: clickedWord });
     if (translationId !== currentTranslationId) return;
@@ -219,35 +221,82 @@ function cleanup() {
     restoreHighlights();
 }
 
-function findSegmentContaining(segments, word) {
-    const lower = word.toLowerCase();
+const SEGMENT_SEPARATOR_LENGTH = 1; // space between concatenated segments
+
+function getSegmentOffsets(segments) {
+    const offsets = [];
+    let pos = 0;
     for (const seg of segments) {
-        if (seg.textContent.toLowerCase().includes(lower)) return seg;
+        offsets.push(pos);
+        pos += seg.textContent.length + SEGMENT_SEPARATOR_LENGTH;
     }
-    return null;
+    return offsets;
 }
 
-function highlightWordInSegment(segment, clickedWord) {
-    const originalHTML = segment.innerHTML;
-    const safeWord = clickedWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`(?<![\\p{L}\\d])${safeWord}(?![\\p{L}\\d])`, "iu");
-    const walker = document.createTreeWalker(segment, NodeFilter.SHOW_TEXT);
+function getGlobalTextOffset(clickedSegment, targetNode, charStart) {
+    const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
+    const segOffsets = getSegmentOffsets(segments);
+    for (let i = 0; i < segments.length; i++) {
+        if (segments[i] !== clickedSegment) continue;
+        const walker = document.createTreeWalker(segments[i], NodeFilter.SHOW_TEXT);
+        let nodeOffset = segOffsets[i];
+        let node;
+        while ((node = walker.nextNode())) {
+            if (node === targetNode) return nodeOffset + charStart;
+            nodeOffset += node.textContent.length;
+        }
+        return nodeOffset + charStart;
+    }
+    return 0;
+}
 
+function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
+    const safeWord = clickedWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(?<![\\p{L}\\d])${safeWord}(?![\\p{L}\\d])`, "giu");
+    const segOffsets = getSegmentOffsets(segments);
+
+    // Collect all occurrences across all segments with global offsets
+    const matches = [];
+    for (let i = 0; i < segments.length; i++) {
+        const text = segments[i].textContent;
+        let m;
+        regex.lastIndex = 0;
+        while ((m = regex.exec(text))) {
+            matches.push({ segment: segments[i], index: m.index, length: m[0].length, absOffset: segOffsets[i] + m.index });
+        }
+    }
+
+    if (matches.length === 0) return null;
+
+    // Pick the exact offset match, falling back to closest
+    const best = matches.find(m => m.absOffset === globalOffset)
+        || matches.reduce((a, b) =>
+            Math.abs(a.absOffset - globalOffset) < Math.abs(b.absOffset - globalOffset) ? a : b
+        );
+
+    // Highlight using TreeWalker within the matched segment
+    const seg = best.segment;
+    const originalHTML = seg.innerHTML;
+    const walker = document.createTreeWalker(seg, NodeFilter.SHOW_TEXT);
+    let nodeOffset = 0;
     let node;
     while ((node = walker.nextNode())) {
-        const match = node.textContent.match(regex);
-        if (!match) continue;
-
-        const range = document.createRange();
-        range.setStart(node, match.index);
-        range.setEnd(node, match.index + match[0].length);
-
-        const highlight = document.createElement("span");
-        highlight.className = "highlight-translate";
-        range.surroundContents(highlight);
-        break;
+        const nodeEnd = nodeOffset + node.textContent.length;
+        if (best.index >= nodeOffset && best.index < nodeEnd) {
+            const localIndex = best.index - nodeOffset;
+            const range = document.createRange();
+            range.setStart(node, localIndex);
+            range.setEnd(node, localIndex + best.length);
+            const highlight = document.createElement("span");
+            highlight.className = "highlight-translate";
+            range.surroundContents(highlight);
+            break;
+        }
+        nodeOffset = nodeEnd;
     }
-    lastHighlightedSegments = [{ el: segment, originalHTML }];
+
+    lastHighlightedSegments = [{ el: seg, originalHTML }];
+    return seg;
 }
 
 function showTooltip({ wordTranslation, x, y, sentenceText, translationId }) {
