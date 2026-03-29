@@ -29,6 +29,15 @@
       "run_at": "document_idle"
     }
   ],
+"browser_specific_settings": {
+    "gecko": {
+        "id": "{10f200c0-2595-4061-bde7-2c7d987e57c7}",
+        "data_collection_permissions": {
+            "required": ["none"],
+            "optional": []
+        }
+    }
+},
   "browser_action": {
     "default_title": "Subtitle Translator",
     "default_popup": "popup.html",
