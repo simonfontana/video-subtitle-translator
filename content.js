@@ -173,12 +173,13 @@ async function handleClick(caret, clientX, clientY, captionElement) {
 
     // Re-query subtitle elements and highlight the correct occurrence
     const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
-    const currentElement = highlightWordAcrossSegments(segments, clickedWord, globalOffset) || captionElement;
+    const highlightResult = highlightWordAcrossSegments(segments, clickedWord, globalOffset);
+    const currentElement = highlightResult?.element || captionElement;
 
     const wordResult = await browser.runtime.sendMessage({ action: "translate", text: clickedWord });
     if (translationId !== currentTranslationId) return;
 
-    const sentenceText = getFullSentenceFromSubtitles(clickedWord, currentElement);
+    const sentenceText = getFullSentenceFromSubtitles(clickedWord, currentElement, segments, highlightResult?.wordOffset);
     showTooltip({
         wordTranslation: wordResult.translation,
         x: clientX,
@@ -296,7 +297,7 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
     }
 
     lastHighlightedSegments = [{ el: seg, originalHTML }];
-    return seg;
+    return { element: seg, wordOffset: best.absOffset };
 }
 
 function showTooltip({ wordTranslation, x, y, sentenceText, translationId }) {
@@ -381,16 +382,30 @@ function showTooltip({ wordTranslation, x, y, sentenceText, translationId }) {
     });
 }
 
-function getFullSentenceFromSubtitles(clickedWord, clickedElement) {
-    const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
-    const text = segments.map(s => s.innerText.trim()).join(" ").replace(/\s+/g, " ");
+function getFullSentenceFromSubtitles(clickedWord, clickedElement, segments, wordOffset) {
+    if (!segments) segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
+    // Use raw textContent joined by spaces — same coordinate system as getSegmentOffsets/wordOffset
+    const text = segments.map(s => s.textContent).join(" ");
     const sentenceRegex = /[^.!?]*[.!?]+["')\]]*|[^.!?]+$/g;
-    const sentences = text.match(sentenceRegex) || [];
+
+    // Use the exact word position to find the sentence containing it
+    if (wordOffset !== undefined) {
+        let match;
+        while ((match = sentenceRegex.exec(text))) {
+            if (wordOffset >= match.index && wordOffset < match.index + match[0].length) {
+                return match[0].trim();
+            }
+        }
+    }
+
+    // Fallback: first sentence containing the word (used by double-click)
+    sentenceRegex.lastIndex = 0;
     const lowerClicked = clickedWord.toLowerCase();
+    const sentences = text.match(sentenceRegex) || [];
     for (let sentence of sentences) {
         if (sentence.toLowerCase().includes(lowerClicked)) return sentence.trim();
     }
-    return clickedElement.innerText.trim();
+    return clickedElement.textContent.trim();
 }
 
 function highlightSentenceAcrossSegments(sentenceText) {
@@ -399,28 +414,35 @@ function highlightSentenceAcrossSegments(sentenceText) {
     const segmentData = [];
 
     for (let el of segments) {
-        const text = el.innerText;
+        const rawText = el.textContent;
+        const trimmed = rawText.trim();
+        const leadingTrim = rawText.length - rawText.trimStart().length;
         const start = fullText.length;
-        fullText += (fullText ? " " : "") + text;
+        fullText += (fullText ? " " : "") + trimmed;
         const end = fullText.length;
-        segmentData.push({ el, text, start, end, originalHTML: el.innerHTML });
+        segmentData.push({ el, start, end, originalHTML: el.innerHTML, leadingTrim });
     }
 
     const fullLowerText = fullText.toLowerCase();
-    const lowerSentence = sentenceText.toLowerCase();
+    const lowerSentence = sentenceText.trim().toLowerCase();
     const sentenceStart = fullLowerText.indexOf(lowerSentence);
     if (sentenceStart === -1) return;
     const sentenceEnd = sentenceStart + lowerSentence.length;
 
     lastHighlightedSegments = [];
 
-    for (const { el, start, end, originalHTML } of segmentData) {
+    for (const { el, start, end, originalHTML, leadingTrim } of segmentData) {
         const overlapStart = Math.max(start, sentenceStart);
         const overlapEnd = Math.min(end, sentenceEnd);
         if (overlapStart >= overlapEnd) continue;
 
+        // Positions relative to the trimmed segment text
         const segRelativeStart = overlapStart - start;
         const segRelativeEnd = overlapEnd - start;
+
+        // Adjust to raw text node positions by adding back leading whitespace
+        const rawStart = segRelativeStart + leadingTrim;
+        const rawEnd = segRelativeEnd + leadingTrim;
 
         // Walk text nodes and track cumulative offset within the segment
         const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -431,8 +453,8 @@ function highlightSentenceAcrossSegments(sentenceText) {
             const nodeStart = offset;
             const nodeEnd = offset + nodeLen;
 
-            const hlStart = Math.max(segRelativeStart, nodeStart);
-            const hlEnd = Math.min(segRelativeEnd, nodeEnd);
+            const hlStart = Math.max(rawStart, nodeStart);
+            const hlEnd = Math.min(rawEnd, nodeEnd);
 
             if (hlStart < hlEnd) {
                 const localStart = hlStart - nodeStart;
