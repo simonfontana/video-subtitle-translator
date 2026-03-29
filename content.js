@@ -184,6 +184,7 @@ async function handleClick(caret, clientX, clientY, captionElement) {
         wordTranslation: wordResult.translation,
         x: clientX,
         y: clientY,
+        originalText: clickedWord,
         sentenceText,
         translationId
     });
@@ -205,6 +206,7 @@ async function handleDoubleClick(event, captionElement) {
         wordTranslation: sentenceResult.translation,
         x: event.clientX,
         y: event.clientY,
+        originalText: sentenceText,
         sentenceText,
         translationId
     });
@@ -303,7 +305,8 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
     return { element: seg, wordOffset: best.absOffset };
 }
 
-function showTooltip({ wordTranslation, x, y, sentenceText, translationId }) {
+function showTooltip({ wordTranslation, x, y, originalText, sentenceText, translationId }) {
+    let currentOriginal = originalText;
     const tooltip = document.createElement("div");
     tooltip.id = "subtitle-translate-tooltip";
 
@@ -346,8 +349,79 @@ function showTooltip({ wordTranslation, x, y, sentenceText, translationId }) {
         tooltip.style.opacity = "1";
     });
 
+    tooltip.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const existing = document.getElementById("subtitle-translate-context-menu");
+        if (existing) existing.remove();
+
+        const menu = document.createElement("div");
+        menu.id = "subtitle-translate-context-menu";
+        Object.assign(menu.style, {
+            position: "fixed",
+            background: "rgba(30, 30, 30, 0.97)",
+            color: "#fff",
+            borderRadius: "6px",
+            padding: "4px 0",
+            zIndex: 10001,
+            minWidth: "120px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+            fontFamily: "'YouTube Noto', Roboto, Arial, Helvetica, sans-serif",
+            fontSize: "14px",
+        });
+        menu.style.top = "-9999px";
+        menu.style.left = "-9999px";
+
+        const dismissMenu = () => {
+            menu.remove();
+            document.removeEventListener("click", onClickOutside, true);
+        };
+        const onClickOutside = (e) => {
+            if (!menu.contains(e.target)) dismissMenu();
+        };
+
+        const copyItem = document.createElement("div");
+        copyItem.textContent = "Copy";
+        Object.assign(copyItem.style, {
+            padding: "6px 16px",
+            cursor: "pointer",
+        });
+        copyItem.addEventListener("mouseenter", () => { copyItem.style.background = "rgba(255,255,255,0.15)"; });
+        copyItem.addEventListener("mouseleave", () => { copyItem.style.background = ""; });
+        copyItem.addEventListener("click", () => {
+            navigator.clipboard.writeText(tooltip.textContent);
+            dismissMenu();
+        });
+
+        const copyOriginalItem = document.createElement("div");
+        copyOriginalItem.textContent = "Copy original";
+        Object.assign(copyOriginalItem.style, {
+            padding: "6px 16px",
+            cursor: "pointer",
+        });
+        copyOriginalItem.addEventListener("mouseenter", () => { copyOriginalItem.style.background = "rgba(255,255,255,0.15)"; });
+        copyOriginalItem.addEventListener("mouseleave", () => { copyOriginalItem.style.background = ""; });
+        copyOriginalItem.addEventListener("click", () => {
+            navigator.clipboard.writeText(currentOriginal);
+            dismissMenu();
+        });
+
+        menu.appendChild(copyItem);
+        menu.appendChild(copyOriginalItem);
+        document.body.appendChild(menu);
+
+        requestAnimationFrame(() => {
+            menu.style.top = `${event.clientY - menu.offsetHeight}px`;
+            menu.style.left = `${event.clientX}px`;
+        });
+
+        document.addEventListener("click", onClickOutside, true);
+    });
+
     translatedWordElement = tooltip.querySelector("#translatedWord");
     translatedWordElement.addEventListener("click", async () => {
+        currentOriginal = sentenceText;
         console.log(`[DEBUG] Translated word clicked. Full sentence: "${sentenceText}"`);
         tooltip.textContent = "";
         const sentenceDiv = document.createElement("div");
