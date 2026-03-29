@@ -358,6 +358,14 @@ function showTooltip({ wordTranslation, x, y, sentenceText, translationId }) {
             `<span class="translated-word" style="cursor: pointer; position: relative; margin-right: 4px;">${word}</span>`
         ).join(' ');
 
+        // Reposition tooltip upward to account for new content height
+        requestAnimationFrame(() => {
+            const newRect = tooltip.getBoundingClientRect();
+            if (subtitleRect) {
+                tooltip.style.top = `${subtitleRect.top - newRect.height - 10}px`;
+            }
+        });
+
         sentenceContainer.querySelectorAll('.translated-word').forEach(span => {
             span.addEventListener('click', async () => {
                 const clickedWord = span.textContent.trim().replace(/[.,!?;:]/g, '');
