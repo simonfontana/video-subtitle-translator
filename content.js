@@ -168,8 +168,9 @@ async function handleClick(caret, clientX, clientY, captionElement) {
     // Wait for the site to finish any subtitle re-render triggered by pause
     await waitForSubtitleSettle();
 
-    // Re-query subtitle element in case the site re-rendered the DOM after pause
-    const currentElement = document.querySelector(SUBTITLE_SELECTOR) || captionElement;
+    // Re-query subtitle elements in case the site re-rendered the DOM after pause
+    const segments = document.querySelectorAll(SUBTITLE_SELECTOR);
+    const currentElement = findSegmentContaining(segments, clickedWord) || captionElement;
     highlightWordInSegment(currentElement, clickedWord);
 
     const wordResult = await browser.runtime.sendMessage({ action: "translate", text: clickedWord });
@@ -206,28 +207,45 @@ async function handleDoubleClick(event, captionElement) {
     });
 }
 
-function cleanup() {
-    if (lastTooltip) { lastTooltip.remove(); lastTooltip = null; }
+function restoreHighlights() {
     for (const { el, originalHTML } of lastHighlightedSegments) {
         el.innerHTML = originalHTML;
     }
     lastHighlightedSegments = [];
 }
 
+function cleanup() {
+    if (lastTooltip) { lastTooltip.remove(); lastTooltip = null; }
+    restoreHighlights();
+}
+
+function findSegmentContaining(segments, word) {
+    const lower = word.toLowerCase();
+    for (const seg of segments) {
+        if (seg.textContent.toLowerCase().includes(lower)) return seg;
+    }
+    return null;
+}
+
 function highlightWordInSegment(segment, clickedWord) {
     const originalHTML = segment.innerHTML;
     const safeWord = clickedWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const wordRegex = new RegExp(`(^|\\s)(${safeWord})(?=\\s|$|[.,!?])`, "iu");
-    // Apply highlight inside each child node to preserve existing DOM structure
-    const targets = segment.children.length > 0 ? Array.from(segment.children) : [segment];
-    let found = false;
-    for (const node of targets) {
-        if (found) break;
-        const replaced = node.innerHTML.replace(wordRegex, (_match, prefix, word) => {
-            found = true;
-            return `${prefix}<span class="highlight-translate">${word}</span>`;
-        });
-        if (found) node.innerHTML = replaced;
+    const regex = new RegExp(`(?<![\\p{L}\\d])${safeWord}(?![\\p{L}\\d])`, "iu");
+    const walker = document.createTreeWalker(segment, NodeFilter.SHOW_TEXT);
+
+    let node;
+    while ((node = walker.nextNode())) {
+        const match = node.textContent.match(regex);
+        if (!match) continue;
+
+        const range = document.createRange();
+        range.setStart(node, match.index);
+        range.setEnd(node, match.index + match[0].length);
+
+        const highlight = document.createElement("span");
+        highlight.className = "highlight-translate";
+        range.surroundContents(highlight);
+        break;
     }
     lastHighlightedSegments = [{ el: segment, originalHTML }];
 }
@@ -282,6 +300,7 @@ function showTooltip({ wordTranslation, x, y, sentenceText, translationId }) {
         const sentenceContainer = tooltip.querySelector("#translatedSentence");
         const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
         if (translationId !== currentTranslationId) return;
+        restoreHighlights();
         highlightSentenceAcrossSegments(sentenceText);
 
         const words = sentenceResult.translation.split(/\s+/);
@@ -346,30 +365,46 @@ function highlightSentenceAcrossSegments(sentenceText) {
 
     lastHighlightedSegments = [];
 
-    for (const { el, text, start, end, originalHTML } of segmentData) {
+    for (const { el, start, end, originalHTML } of segmentData) {
         const overlapStart = Math.max(start, sentenceStart);
         const overlapEnd = Math.min(end, sentenceEnd);
         if (overlapStart >= overlapEnd) continue;
 
         const segRelativeStart = overlapStart - start;
         const segRelativeEnd = overlapEnd - start;
-        const matchText = text.slice(segRelativeStart, segRelativeEnd);
 
-        // Highlight within each child node to preserve DOM structure
-        const targets = el.children.length > 0 ? Array.from(el.children) : [el];
-        let remaining = matchText.toLowerCase();
-        for (const node of targets) {
-            if (!remaining) break;
-            const nodeText = node.textContent;
-            const nodeLower = nodeText.toLowerCase();
-            const idx = nodeLower.indexOf(remaining.slice(0, Math.min(remaining.length, nodeLower.length)));
-            if (idx === -1) continue;
-            const take = Math.min(remaining.length, nodeLower.length - idx);
-            const before = nodeText.slice(0, idx);
-            const match = nodeText.slice(idx, idx + take);
-            const after = nodeText.slice(idx + take);
-            node.innerHTML = `${before}<span class="highlight-translate">${match}</span>${after}`;
-            remaining = remaining.slice(take);
+        // Walk text nodes and track cumulative offset within the segment
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let offset = 0;
+        let node;
+        while ((node = walker.nextNode())) {
+            const nodeLen = node.textContent.length;
+            const nodeStart = offset;
+            const nodeEnd = offset + nodeLen;
+
+            const hlStart = Math.max(segRelativeStart, nodeStart);
+            const hlEnd = Math.min(segRelativeEnd, nodeEnd);
+
+            if (hlStart < hlEnd) {
+                const localStart = hlStart - nodeStart;
+                const localEnd = hlEnd - nodeStart;
+
+                // Split the text node and wrap the matching portion
+                const before = node;
+                const matchNode = before.splitText(localStart);
+                const after = matchNode.splitText(localEnd - localStart);
+
+                const highlight = document.createElement("span");
+                highlight.className = "highlight-translate";
+                matchNode.parentNode.replaceChild(highlight, matchNode);
+                highlight.appendChild(matchNode);
+
+                // Continue walking from the remainder node
+                walker.currentNode = after;
+                offset = hlEnd;
+                continue;
+            }
+            offset = nodeEnd;
         }
 
         lastHighlightedSegments.push({ el, originalHTML });
