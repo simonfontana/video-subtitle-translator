@@ -1,0 +1,58 @@
+version: "3"
+
+vars:
+  EXT_NAME: subtitle-translator
+  VERSION:
+    sh: jq -r .version manifest.json
+
+tasks:
+  default:
+    deps: [validate, build]
+  build:
+    desc: Build the .zip for Firefox extension submission
+    deps: [validate]
+    cmds:
+      - mkdir -p out
+      - rm -f "out/{{.EXT_NAME}}-{{.VERSION}}.zip"
+      - zip "out/{{.EXT_NAME}}-{{.VERSION}}.zip"
+          manifest.json
+          background.js
+          content.js
+          content.css
+          popup.html
+          popup.js
+          icon.png
+          LICENSE
+    generates:
+      - "out/{{.EXT_NAME}}-{{.VERSION}}.zip"
+
+  validate:
+    desc: Check required files and manifest fields
+    cmds:
+      - |
+        ok=true
+        for f in manifest.json background.js content.js content.css popup.html popup.js icon.png LICENSE; do
+          if [ ! -f "$f" ]; then
+            echo "ERROR: missing $f"
+            ok=false
+          fi
+        done
+        if [ "$ok" = false ]; then exit 1; fi
+        echo "All checks passed"
+    silent: true
+
+  bump:
+    desc: Bump the patch version (e.g. 1.0 → 1.1)
+    cmds:
+      - |
+        current=$(jq -r .version manifest.json)
+        major=$(echo "$current" | cut -d. -f1)
+        minor=$(echo "$current" | cut -d. -f2)
+        new="$major.$((minor + 1))"
+        jq --arg v "$new" '.version = $v' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
+        echo "Bumped version: $current → $new"
+
+  clean:
+    desc: Remove built zip files
+    cmds:
+      - rm -rf out

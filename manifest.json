@@ -1,37 +1,37 @@
 {
-    "manifest_version": 2,
-    "name": "Subtitle Translator",
-    "version": "1.0",
-    "description": "Click a word in video subtitles to translate it using DeepL.",
-    "permissions": [
-        "activeTab",
-        "storage",
-        "https://api-free.deepl.com/*"
+  "manifest_version": 2,
+  "name": "Subtitle Translator",
+  "version": "1.1",
+  "description": "Click a word in video subtitles to translate it using DeepL.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "https://api-free.deepl.com/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
     ],
-    "background": {
-        "scripts": [
-            "background.js"
-        ],
-        "persistent": false
-    },
-    "content_scripts": [
-        {
-            "matches": [
-                "*://www.youtube.com/*",
-                "*://www.svtplay.se/*"
-            ],
-            "js": [
-                "content.js"
-            ],
-            "css": [
-                "content.css"
-            ],
-            "run_at": "document_idle"
-        }
-    ],
-    "browser_action": {
-        "default_title": "Subtitle Translator",
-        "default_popup": "popup.html",
-        "default_icon": "icon.png"
+    "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.youtube.com/*",
+        "*://www.svtplay.se/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
     }
+  ],
+  "browser_action": {
+    "default_title": "Subtitle Translator",
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  }
 }
