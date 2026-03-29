@@ -211,8 +211,11 @@ async function handleDoubleClick(event, captionElement) {
 }
 
 function restoreHighlights() {
-    for (const { el, originalHTML } of lastHighlightedSegments) {
-        el.innerHTML = originalHTML;
+    for (const { el, savedNodes } of lastHighlightedSegments) {
+        el.textContent = "";
+        for (const node of savedNodes) {
+            el.appendChild(node);
+        }
     }
     lastHighlightedSegments = [];
 }
@@ -277,7 +280,7 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
 
     // Highlight using TreeWalker within the matched segment
     const seg = best.segment;
-    const originalHTML = seg.innerHTML;
+    const savedNodes = Array.from(seg.childNodes).map(n => n.cloneNode(true));
     const walker = document.createTreeWalker(seg, NodeFilter.SHOW_TEXT);
     let nodeOffset = 0;
     let node;
@@ -296,7 +299,7 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
         nodeOffset = nodeEnd;
     }
 
-    lastHighlightedSegments = [{ el: seg, originalHTML }];
+    lastHighlightedSegments = [{ el: seg, savedNodes }];
     return { element: seg, wordOffset: best.absOffset };
 }
 
@@ -307,11 +310,11 @@ function showTooltip({ wordTranslation, x, y, sentenceText, translationId }) {
     const subtitleElement = document.querySelector(SUBTITLE_SELECTOR);
     const subtitleRect = subtitleElement ? subtitleElement.getBoundingClientRect() : null;
 
-    tooltip.innerHTML = `
-        <div id="translatedWord" style="font-size: 22px; font-weight: bold; cursor: pointer;">
-            ${wordTranslation}
-        </div>
-    `;
+    const translatedWordDiv = document.createElement("div");
+    translatedWordDiv.id = "translatedWord";
+    Object.assign(translatedWordDiv.style, { fontSize: "22px", fontWeight: "bold", cursor: "pointer" });
+    translatedWordDiv.textContent = wordTranslation;
+    tooltip.appendChild(translatedWordDiv);
 
     Object.assign(tooltip.style, {
         position: "fixed",
@@ -346,17 +349,27 @@ function showTooltip({ wordTranslation, x, y, sentenceText, translationId }) {
     translatedWordElement = tooltip.querySelector("#translatedWord");
     translatedWordElement.addEventListener("click", async () => {
         console.log(`[DEBUG] Translated word clicked. Full sentence: "${sentenceText}"`);
-        tooltip.innerHTML = `<div style="font-size: 26px; line-height: 1.4;" id="translatedSentence"></div>`;
-        const sentenceContainer = tooltip.querySelector("#translatedSentence");
+        tooltip.textContent = "";
+        const sentenceDiv = document.createElement("div");
+        sentenceDiv.id = "translatedSentence";
+        Object.assign(sentenceDiv.style, { fontSize: "26px", lineHeight: "1.4" });
+        tooltip.appendChild(sentenceDiv);
+        const sentenceContainer = sentenceDiv;
         const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
         if (translationId !== currentTranslationId) return;
         restoreHighlights();
         highlightSentenceAcrossSegments(sentenceText);
 
         const words = sentenceResult.translation.split(/\s+/);
-        sentenceContainer.innerHTML = words.map(word =>
-            `<span class="translated-word" style="cursor: pointer; position: relative; margin-right: 4px;">${word}</span>`
-        ).join(' ');
+        sentenceContainer.textContent = "";
+        words.forEach((word, i) => {
+            if (i > 0) sentenceContainer.appendChild(document.createTextNode(" "));
+            const span = document.createElement("span");
+            span.className = "translated-word";
+            Object.assign(span.style, { cursor: "pointer", position: "relative", marginRight: "4px" });
+            span.textContent = word;
+            sentenceContainer.appendChild(span);
+        });
 
         // Reposition tooltip upward to account for new content height
         requestAnimationFrame(() => {
@@ -428,7 +441,7 @@ function highlightSentenceAcrossSegments(sentenceText) {
         const start = fullText.length;
         fullText += (fullText ? " " : "") + trimmed;
         const end = fullText.length;
-        segmentData.push({ el, start, end, originalHTML: el.innerHTML, leadingTrim });
+        segmentData.push({ el, start, end, savedNodes: Array.from(el.childNodes).map(n => n.cloneNode(true)), leadingTrim });
     }
 
     const fullLowerText = fullText.toLowerCase();
@@ -439,7 +452,7 @@ function highlightSentenceAcrossSegments(sentenceText) {
 
     lastHighlightedSegments = [];
 
-    for (const { el, start, end, originalHTML, leadingTrim } of segmentData) {
+    for (const { el, start, end, savedNodes, leadingTrim } of segmentData) {
         const overlapStart = Math.max(start, sentenceStart);
         const overlapEnd = Math.min(end, sentenceEnd);
         if (overlapStart >= overlapEnd) continue;
@@ -486,6 +499,6 @@ function highlightSentenceAcrossSegments(sentenceText) {
             offset = nodeEnd;
         }
 
-        lastHighlightedSegments.push({ el, originalHTML });
+        lastHighlightedSegments.push({ el, savedNodes });
     }
 }
