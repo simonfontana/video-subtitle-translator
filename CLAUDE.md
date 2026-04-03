@@ -100,9 +100,20 @@ This is necessary because a word/sentence can span multiple text nodes (e.g. in 
 
 ## Known Issues / TODOs
 
-- `translatedWordElement` in `showTooltip()` is assigned without `const`/`let`, creating an implicit global
-- When `sourceLang` is set to "auto" and reverse translation is triggered, `targetLang` becomes "auto" which is not a valid DeepL target language — should fall back to `detected_source_language` from the API response
-- YouTube and SVT Play site configs are nearly identical (only `subtitleSelector` differs) — could extract a shared base config
+### Bugs
+- **No click-outside cleanup**: `cleanup()` only runs on video resume or when a new translation is triggered. Clicking on an empty part of the page (not a subtitle, not the play button) leaves the tooltip and highlights stuck indefinitely with the video paused. Needs a document-level click listener that calls `cleanup()` when the click target is outside both the tooltip and subtitle elements.
+- **Reverse translation breaks with auto-detect**: When `sourceLang` is "auto" and reverse translation is triggered, `targetLang` becomes "auto" which is not a valid DeepL target language. Should fall back to `detected_source_language` from the DeepL API response.
+- `translatedWordElement` in `showTooltip()` is assigned without `const`/`let`, creating an implicit global.
+
+### Code quality
+- **Highlight code duplication**: `highlightWordAcrossSegments` and `highlightSentenceAcrossSegments` both implement the same text-node-walking + splitText + wrap-in-span technique (~30 lines each). Extract a shared `highlightRangeInSegment(el, rawStart, rawEnd)` helper.
+- **Site config duplication**: YouTube and SVT Play configs are identical except for `subtitleSelector`. A factory like `makeVideoSiteConfig(selector)` would make adding new sites a one-liner.
+- **`showTooltip` is ~170 lines of imperative DOM construction**: Consider splitting into smaller functions (`createTooltipShell`, `attachContextMenu`, `attachSentenceExpansion`) for readability.
+
+### Features to consider
+- **Translation caching**: Every click fires a DeepL request even for previously translated words. A simple in-memory `Map` cache in `background.js` (with a size cap) would reduce API usage and make repeat lookups instant.
+- **Paid DeepL API support**: `api-free.deepl.com` is hardcoded in `background.js` and `popup.js`. Users with paid plans need `api.deepl.com`. Could auto-detect from key format (free keys end in `:fx`) or add a popup setting.
+- **Error state leaves video paused**: If `handleClick` throws after pausing the video (e.g. extension context lost), the video stays paused with no tooltip and no way to dismiss. A `try/finally` ensuring cleanup on failure would help.
 
 ## Adding a New Site
 
