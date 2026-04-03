@@ -144,6 +144,30 @@ document.addEventListener("dblclick", (event) => {
     handleDoubleClick(event, clickedElement);
 }, true);
 
+// Join a hyphenated word split across subtitle lines within a caption element.
+// e.g. <span>komplett-</span><span>eringar ...</span> → word: "kompletteringar", originalForm: "komplett-eringar"
+// Uses captionElement.textContent (which concatenates all inner spans) as the source of truth.
+// Returns { word, originalForm } — word is for translation, originalForm is for highlighting.
+function joinHyphenatedWord(clickedWord, caretText, endOffset, captionElement) {
+    const fullText = captionElement.textContent;
+    const hyphenChars = '-\u2010\u2011';
+
+    // Case 1: clicked word is followed by a hyphen in its text node
+    if (endOffset < caretText.length && hyphenChars.includes(caretText[endOffset])) {
+        // Find "clickedWord-<continuation>" in the full caption text
+        const re = new RegExp(clickedWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[' + hyphenChars + '](\\p{L}[\\p{L}\\d]*)', 'u');
+        const m = fullText.match(re);
+        if (m) return { word: clickedWord + m[1], originalForm: m[0] };
+    }
+
+    // Case 2: clicked the continuation — check if full text has "<prefix>-clickedWord"
+    const re2 = new RegExp('([\\p{L}\\d]+)[' + hyphenChars + ']' + clickedWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\d])', 'u');
+    const m2 = fullText.match(re2);
+    if (m2) return { word: m2[1] + clickedWord, originalForm: m2[0] };
+
+    return { word: clickedWord, originalForm: null };
+}
+
 async function handleClick(caret, clientX, clientY, captionElement) {
     const translationId = ++currentTranslationId;
 
@@ -155,13 +179,16 @@ async function handleClick(caret, clientX, clientY, captionElement) {
     while (start > 0 && (/\p{L}|\d|-/u.test(text[start - 1]))) start--;
     while (end < text.length && /\p{L}|\d/u.test(text[end])) end++;
 
-    const clickedWord = text.slice(start, end).trim().replace(/[.,!?;:]/g, '');
+    let clickedWord = text.slice(start, end).trim().replace(/[.,!?;:]/g, '');
     if (!clickedWord) return;
+
+    // Handle hyphenated words split across lines: join for translation, keep original for highlighting
+    const hyphenResult = joinHyphenatedWord(clickedWord, text, end, captionElement);
+    clickedWord = hyphenResult.word;
+    const highlightWord = hyphenResult.originalForm || clickedWord;
 
     // Calculate the clicked word's global offset across all subtitle segments before pause
     const globalOffset = getGlobalTextOffset(captionElement, caret.offsetNode, start);
-
-    console.log(`[DEBUG] Single click on word: "${clickedWord}" at global offset ${globalOffset}`);
 
     siteConfig.pauseVideo();
     siteConfig.onResume(() => cleanup());
@@ -173,7 +200,7 @@ async function handleClick(caret, clientX, clientY, captionElement) {
 
     // Re-query subtitle elements and highlight the correct occurrence
     const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
-    const highlightResult = highlightWordAcrossSegments(segments, clickedWord, globalOffset);
+    const highlightResult = highlightWordAcrossSegments(segments, highlightWord, globalOffset);
     const currentElement = highlightResult?.element || captionElement;
 
     const wordResult = await browser.runtime.sendMessage({ action: "translate", text: clickedWord });
@@ -193,8 +220,6 @@ async function handleClick(caret, clientX, clientY, captionElement) {
 async function handleDoubleClick(event, captionElement) {
     const translationId = ++currentTranslationId;
     const sentenceText = getFullSentenceFromSubtitles(captionElement.innerText.trim(), captionElement);
-    console.log(`[DEBUG] Double-click detected. Full sentence: "${sentenceText}"`);
-
     siteConfig.pauseVideo();
     siteConfig.onResume(() => cleanup());
 
@@ -280,23 +305,40 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
             Math.abs(a.absOffset - globalOffset) < Math.abs(b.absOffset - globalOffset) ? a : b
         );
 
-    // Highlight using TreeWalker within the matched segment
+    // Highlight the match — may span multiple text nodes (e.g. "komplett-" and "eringar" in
+    // separate <span>s), so we walk all text nodes and wrap each overlapping portion.
     const seg = best.segment;
     const savedNodes = Array.from(seg.childNodes).map(n => n.cloneNode(true));
+    const hlStart = best.index;
+    const hlEnd = best.index + best.length;
     const walker = document.createTreeWalker(seg, NodeFilter.SHOW_TEXT);
     let nodeOffset = 0;
     let node;
     while ((node = walker.nextNode())) {
-        const nodeEnd = nodeOffset + node.textContent.length;
-        if (best.index >= nodeOffset && best.index < nodeEnd) {
-            const localIndex = best.index - nodeOffset;
-            const range = document.createRange();
-            range.setStart(node, localIndex);
-            range.setEnd(node, localIndex + best.length);
+        const nodeLen = node.textContent.length;
+        const nodeStart = nodeOffset;
+        const nodeEnd = nodeOffset + nodeLen;
+
+        const overlapStart = Math.max(hlStart, nodeStart);
+        const overlapEnd = Math.min(hlEnd, nodeEnd);
+
+        if (overlapStart < overlapEnd) {
+            const localStart = overlapStart - nodeStart;
+            const localEnd = overlapEnd - nodeStart;
+
+            const before = node;
+            const matchNode = before.splitText(localStart);
+            const after = matchNode.splitText(localEnd - localStart);
+
             const highlight = document.createElement("span");
             highlight.className = "highlight-translate";
-            range.surroundContents(highlight);
-            break;
+            matchNode.parentNode.replaceChild(highlight, matchNode);
+            highlight.appendChild(matchNode);
+
+            walker.currentNode = after;
+            nodeOffset = overlapEnd;
+            if (overlapEnd >= hlEnd) break;
+            continue;
         }
         nodeOffset = nodeEnd;
     }
@@ -422,7 +464,6 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
     translatedWordElement = tooltip.querySelector("#translatedWord");
     translatedWordElement.addEventListener("click", async () => {
         currentOriginal = sentenceText;
-        console.log(`[DEBUG] Translated word clicked. Full sentence: "${sentenceText}"`);
         tooltip.textContent = "";
         const sentenceDiv = document.createElement("div");
         sentenceDiv.id = "translatedSentence";
@@ -456,7 +497,6 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
         sentenceContainer.querySelectorAll('.translated-word').forEach(span => {
             span.addEventListener('click', async () => {
                 const clickedWord = span.textContent.trim().replace(/[.,!?;:]/g, '');
-                console.log(`[DEBUG] Translating word back to source: "${clickedWord}"`);
                 const reverseTranslation = await browser.runtime.sendMessage({ action: "translate", text: clickedWord, reverse: true });
 
                 let popup = span.querySelector('.reverse-translation');

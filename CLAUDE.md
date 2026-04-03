@@ -40,6 +40,7 @@ Three components communicate via `browser.runtime.sendMessage`:
 - `highlightSentenceAcrossSegments()` maps sentence text positions across multiple DOM subtitle segments
 - `cleanup()` is called on any click outside the tooltip to remove highlights and close the popup
 - Video is paused when a translation is triggered
+- `joinHyphenatedWord()` handles words split across subtitle lines (e.g. "komplett-" / "eringar" → "kompletteringar"). It returns both a joined form (for translation) and the original hyphenated form (for highlighting). The highlight code must walk multiple text nodes since the hyphenated word spans separate `<span>` elements — a single `Range` across nodes will throw `IndexSizeError`.
 
 ## Supported Sites
 
@@ -54,6 +55,8 @@ Three components communicate via `browser.runtime.sendMessage`:
 - Uses a standard `<video>` element — pause/play via the HTMLMediaElement API
 - The page source fetched at page-load time does **not** contain subtitle elements; they are injected dynamically into the DOM only while the video is playing with subtitles enabled. To inspect subtitle DOM, run the video with subtitles on and query the live DOM (e.g. `document.querySelectorAll('[class*="cue"]')`).
 - SVT Play is a Next.js app; CSS class names like `css-1okjmlg` are dynamically generated and unstable — always target semantic class names like `.vtt-cue-teletext` instead
+- Each `.vtt-cue-teletext` element contains one `<span>` per subtitle line (e.g. `<span>komplett-</span><span>eringar ...</span>`). `caretPositionFromPoint` returns a text node inside one `<span>`, so the text boundary of a single word may not extend across line breaks. Use `captionElement.textContent` (which concatenates all inner spans) to reason about the full cue text.
+- DOM node references captured at click time (via `caretPositionFromPoint`) may become stale by the time a deferred handler runs (e.g. after the 250ms debounce). Do not rely on node identity (`===`) for nodes captured before a timeout — compare by content or offset instead.
 
 ## Adding a New Site
 
