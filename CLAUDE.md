@@ -101,7 +101,6 @@ This is necessary because a word/sentence can span multiple text nodes (e.g. in 
 ## Known Issues / TODOs
 
 ### Bugs
-- **No click-outside cleanup**: `cleanup()` only runs on video resume or when a new translation is triggered. Clicking on an empty part of the page (not a subtitle, not the play button) leaves the tooltip and highlights stuck indefinitely with the video paused. Needs a document-level click listener that calls `cleanup()` when the click target is outside both the tooltip and subtitle elements.
 - **Reverse translation breaks with auto-detect**: When `sourceLang` is "auto" and reverse translation is triggered, `targetLang` becomes "auto" which is not a valid DeepL target language. Should fall back to `detected_source_language` from the DeepL API response.
 - `translatedWordElement` in `showTooltip()` is assigned without `const`/`let`, creating an implicit global.
 

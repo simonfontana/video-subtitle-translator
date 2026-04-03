@@ -128,6 +128,19 @@ if (siteConfig.suppressEvents) {
     }
 }
 
+// Click-outside cleanup: dismiss tooltip, restore highlights, and resume video
+// when the user clicks anywhere that isn't a subtitle element or the tooltip.
+document.addEventListener("click", (event) => {
+    if (!lastTooltip) return;
+    const isTooltip = lastTooltip.contains(event.target);
+    const isContextMenu = document.getElementById("subtitle-translate-context-menu")?.contains(event.target);
+    const isSubtitle = !!event.target.closest(SUBTITLE_SELECTOR);
+    if (!isTooltip && !isContextMenu && !isSubtitle) {
+        cleanup();
+        siteConfig.resumeVideo();
+    }
+}, true);
+
 // Single-click on a subtitle word: translate just that word.
 // We delay 250ms to distinguish from double-click. If a dblclick fires within
 // that window, the timer is cleared and only the dblclick handler runs.
