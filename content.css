@@ -1,17 +1,22 @@
+/* Default highlight style for word/sentence highlights injected by content.js */
 .highlight-translate {
     background: yellow;
     color: black;
 }
 
-/* Preserve subtitle styling when we inject highlight spans */
+/* SVT Play override: use semi-transparent yellow instead of solid, and inherit
+   the cue's own text color/size so highlighted text doesn't look broken */
 .vtt-cue-teletext .highlight-translate {
     color: inherit;
     background: rgba(255, 255, 0, 0.4);
     font-size: inherit;
 }
 
-/* SVT Play: subtitle elements and all their ancestors up to the player have pointer-events:none —
-   override the entire chain so elementsFromPoint() and clicks can reach them */
+/* SVT Play: the subtitle cue elements and their ancestors have pointer-events:none
+   set by the player's CSS. Without this override, elementsFromPoint() won't find
+   the subtitle elements and clicks won't reach our handlers.
+   div:has(.vtt-cue-teletext) targets the parent container without relying on
+   unstable generated class names. */
 .vtt-cue-teletext,
 .vtt-cue-teletext *,
 div:has(.vtt-cue-teletext) {

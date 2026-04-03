@@ -38,9 +38,43 @@ Three components communicate via `browser.runtime.sendMessage`:
 - A 250ms debounce on `click` is used to distinguish single-clicks from double-clicks
 - Word boundaries are detected with a Unicode-aware regex `/\p{L}|\d|-/u`
 - `highlightSentenceAcrossSegments()` maps sentence text positions across multiple DOM subtitle segments
-- `cleanup()` is called on any click outside the tooltip to remove highlights and close the popup
+- `cleanup()` is called when the video resumes to remove highlights and close the popup
 - Video is paused when a translation is triggered
 - `joinHyphenatedWord()` handles words split across subtitle lines (e.g. "komplett-" / "eringar" → "kompletteringar"). It returns both a joined form (for translation) and the original hyphenated form (for highlighting). The highlight code must walk multiple text nodes since the hyphenated word spans separate `<span>` elements — a single `Range` across nodes will throw `IndexSizeError`.
+
+## Staleness & DOM Re-render Handling
+
+Several mechanisms work together to handle the fact that pausing the video (or the 250ms click debounce) can cause the site to re-render subtitle elements, invalidating captured DOM references:
+
+- **Caret captured immediately**: `caretInSubtitle()` is called synchronously at click time, before the 250ms timer, because the DOM may change before the deferred handler runs.
+- **Global text offset**: `getGlobalTextOffset()` converts a (node, charStart) pair into a numeric position in the virtual concatenation of all segments' textContent. This survives DOM re-renders because it's a character position, not a node reference.
+- **`waitForSubtitleSettle()`**: After pausing, waits for the subtitle container's MutationObserver to go quiet (50ms after last mutation, or 150ms timeout if no mutation at all).
+- **Re-query after settle**: After the DOM settles, subtitle elements are re-queried from the DOM and `highlightWordAcrossSegments()` uses the saved global offset to find the correct word occurrence in the new nodes.
+- **`currentTranslationId`**: Monotonically increasing counter that detects stale async responses. Each click bumps the ID; when a translation response arrives, it's discarded if the ID no longer matches.
+
+## Highlighting Technique
+
+Both `highlightWordAcrossSegments()` and `highlightSentenceAcrossSegments()` use the same DOM manipulation technique:
+1. Clone all childNodes of the target segment (for later restoration via `restoreHighlights()`)
+2. Walk text nodes with a `TreeWalker`
+3. Use `splitText()` to isolate the character range that needs highlighting
+4. Wrap the isolated text node in a `<span class="highlight-translate">`
+5. Advance the walker to the remainder node after the split
+
+This is necessary because a word/sentence can span multiple text nodes (e.g. in SVT Play where each subtitle line is a separate `<span>`). A single `Range` across nodes would throw `IndexSizeError`.
+
+## Tooltip Interaction Flow
+
+1. **Word view** (initial): Shows the translated word in bold. Right-click opens a custom context menu with "Copy" / "Copy original".
+2. **Sentence view** (click the translated word): Translates the full sentence. Each word in the translated sentence is rendered as a clickable `<span>`.
+3. **Reverse translation** (click a word in the sentence view): Shows a small popup above the word with its translation back to the source language (uses `reverse: true` in the message to background.js).
+
+## content.css
+
+- `content.css` is loaded alongside `content.js` by the manifest
+- Defines `.highlight-translate` styles (yellow highlight for words/sentences)
+- SVT Play subtitle elements have `pointer-events: none` set by the player's CSS — the `pointer-events: auto !important` override on `.vtt-cue-teletext` and its ancestors is required for `elementsFromPoint()` and click handlers to work
+- Uses `div:has(.vtt-cue-teletext)` to target the subtitle container parent without relying on unstable generated class names
 
 ## Supported Sites
 
@@ -58,9 +92,23 @@ Three components communicate via `browser.runtime.sendMessage`:
 - Each `.vtt-cue-teletext` element contains one `<span>` per subtitle line (e.g. `<span>komplett-</span><span>eringar ...</span>`). `caretPositionFromPoint` returns a text node inside one `<span>`, so the text boundary of a single word may not extend across line breaks. Use `captionElement.textContent` (which concatenates all inner spans) to reason about the full cue text.
 - DOM node references captured at click time (via `caretPositionFromPoint`) may become stale by the time a deferred handler runs (e.g. after the 250ms debounce). Do not rely on node identity (`===`) for nodes captured before a timeout — compare by content or offset instead.
 
+## Overlay Handling
+
+`findSubtitleAt()` and `caretInSubtitle()` handle the common case where transparent overlay elements sit on top of subtitle text (YouTube's click-capture div, player control overlays, etc.):
+- `findSubtitleAt()` uses `elementsFromPoint()` to look through the stacking order for a subtitle element
+- `caretInSubtitle()` temporarily hides overlay elements (setting `visibility: hidden`) one by one until `caretPositionFromPoint()` can "see through" to the subtitle text node
+
+## Known Issues / TODOs
+
+- `translatedWordElement` in `showTooltip()` is assigned without `const`/`let`, creating an implicit global
+- When `sourceLang` is set to "auto" and reverse translation is triggered, `targetLang` becomes "auto" which is not a valid DeepL target language — should fall back to `detected_source_language` from the API response
+- YouTube and SVT Play site configs are nearly identical (only `subtitleSelector` differs) — could extract a shared base config
+
 ## Adding a New Site
 
 1. Inspect the live subtitle DOM while a video is playing (page source will not show subtitle elements)
 2. Find a stable, semantic CSS selector for the subtitle text element
 3. Add an entry to `SITE_CONFIGS` in `content.js` with `subtitleSelector`, `suppressEvents`, and video control methods
 4. Add the hostname pattern to `content_scripts[0].matches` in `manifest.json`
+5. If the site's subtitle elements have `pointer-events: none`, add a CSS override in `content.css`
+6. Test: single-click word translation, double-click sentence translation, hyphenated words, overlay handling

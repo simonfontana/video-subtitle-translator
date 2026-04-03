@@ -1,10 +1,14 @@
+// Popup settings UI — lets the user configure source/target language and DeepL API key.
+// Settings are persisted in browser.storage.local and read by background.js on each
+// translation request.
+
 const sourceSelect = document.getElementById("sourceLang");
 const targetSelect = document.getElementById("targetLang");
 const apiKeyInput = document.getElementById("apiKey");
 const saveBtn = document.getElementById("saveBtn");
 const statusMsg = document.getElementById("statusMsg");
 
-// Load saved values
+// Restore previously saved settings into the form fields
 browser.storage.local.get(["sourceLang", "targetLang", "deeplApiKey"]).then(data => {
     if (data.sourceLang) sourceSelect.value = data.sourceLang;
     if (data.targetLang) targetSelect.value = data.targetLang;
@@ -46,6 +50,9 @@ saveBtn.addEventListener("click", async () => {
     }, 2000);
 });
 
+// Validate the API key by making a real translation request to DeepL.
+// If the key is valid, DeepL returns a translations array; an invalid key
+// returns a 403 error and no translations field.
 async function validateApiKey(key) {
     const url = "https://api-free.deepl.com/v2/translate";
     const params = new URLSearchParams();
@@ -64,7 +71,7 @@ async function validateApiKey(key) {
         });
 
         const data = await res.json();
-        return Array.isArray(data.translations); // success if translations exist
+        return Array.isArray(data.translations);
     } catch (err) {
         console.error("Key validation error:", err);
         return false;

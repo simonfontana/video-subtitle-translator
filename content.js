@@ -1,3 +1,5 @@
+// TODO: YouTube and SVT Play configs are nearly identical (only selector differs).
+// Consider extracting a shared base config to reduce duplication.
 const SITE_CONFIGS = {
     "www.youtube.com": {
         subtitleSelector: ".ytp-caption-segment",
@@ -13,6 +15,8 @@ const SITE_CONFIGS = {
             const video = this.getVideoElement();
             if (video) video.play();
         },
+        // Register a one-shot listener for when the video resumes playing.
+        // Returns an unsubscribe function so the caller can cancel if needed.
         onResume(callback) {
             const video = this.getVideoElement();
             if (!video) return () => {};
@@ -49,9 +53,16 @@ const siteConfig = SITE_CONFIGS[window.location.hostname];
 if (!siteConfig) throw new Error(`[subtitle-translator] No config for ${window.location.hostname}`);
 const SUBTITLE_SELECTOR = siteConfig.subtitleSelector;
 
+// Monotonically increasing ID used to discard stale translation responses.
+// Each new click/dblclick bumps this; when the async response arrives, it's
+// compared against currentTranslationId — if they differ, the result is outdated.
 let currentTranslationId = 0;
 let lastTooltip = null;
+// Stores { el, savedNodes } for each segment that was modified by highlighting,
+// so restoreHighlights() can put the original DOM back.
 let lastHighlightedSegments = [];
+// Timer for the 250ms single-click debounce (cleared on dblclick to prevent
+// the single-click handler from also firing).
 let clickTimer = null;
 
 // Find subtitle element at click coordinates — needed when an overlay sits on top of subtitles
@@ -82,11 +93,15 @@ function waitForSubtitleSettle() {
     });
 }
 
-// Get caret position within a subtitle element, temporarily hiding any overlay elements on top
+// Get caret position within a subtitle element, temporarily hiding any overlay elements on top.
+// caretPositionFromPoint returns the text node + character offset at (x,y). If an overlay
+// element (e.g. YouTube's transparent click-capture div) sits above the subtitle, the browser
+// returns the overlay's node instead. We fix this by iterating elementsFromPoint (which returns
+// elements top-to-bottom in stacking order), hiding each one until we reach the subtitle
+// element, then re-querying caretPositionFromPoint so it "sees through" to the subtitle text.
 function caretInSubtitle(x, y, subtitleEl) {
     const direct = document.caretPositionFromPoint(x, y);
     if (direct?.offsetNode && subtitleEl.contains(direct.offsetNode)) return direct;
-    // Hide each element above the subtitle in the stacking order
     const hidden = [];
     for (const el of document.elementsFromPoint(x, y)) {
         if (el === subtitleEl || subtitleEl.contains(el)) break;
@@ -98,6 +113,10 @@ function caretInSubtitle(x, y, subtitleEl) {
     return caret;
 }
 
+// Intercept mousedown/pointerdown in the capture phase on subtitle elements.
+// YouTube (and SVT Play) attach their own handlers that would swallow the click
+// before our "click" listener fires. By stopping propagation here, we ensure
+// the subsequent "click" event reaches our handler below.
 if (siteConfig.suppressEvents) {
     for (const eventType of ["mousedown", "pointerdown"]) {
         document.addEventListener(eventType, (event) => {
@@ -105,10 +124,15 @@ if (siteConfig.suppressEvents) {
                 event.preventDefault();
                 event.stopPropagation();
             }
-        }, true); // capture phase so we beat the site's own handlers
+        }, true);
     }
 }
 
+// Single-click on a subtitle word: translate just that word.
+// We delay 250ms to distinguish from double-click. If a dblclick fires within
+// that window, the timer is cleared and only the dblclick handler runs.
+// The caret position is captured synchronously because the subtitle DOM may be
+// mutated by the site before the 250ms timeout fires (e.g. subtitle line change).
 document.addEventListener("click", (event) => {
     const clickedElement = findSubtitleAt(event);
     if (!clickedElement) return;
@@ -116,7 +140,6 @@ document.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
 
-    // Capture caret position immediately — DOM may change before the 250ms timeout fires
     const caret = caretInSubtitle(event.clientX, event.clientY, clickedElement);
 
     if (clickTimer) {
@@ -126,9 +149,11 @@ document.addEventListener("click", (event) => {
 
     clickTimer = setTimeout(() => {
         handleClick(caret, event.clientX, event.clientY, clickedElement);
-    }, 250); // 250ms delay to detect double-click
+    }, 250);
 }, true);
 
+// Double-click on a subtitle: translate the full sentence.
+// Cancels any pending single-click timer so only the sentence translation fires.
 document.addEventListener("dblclick", (event) => {
     const clickedElement = findSubtitleAt(event);
     if (!clickedElement) return;
@@ -168,6 +193,11 @@ function joinHyphenatedWord(clickedWord, caretText, endOffset, captionElement) {
     return { word: clickedWord, originalForm: null };
 }
 
+// Handle a single-click on a subtitle word:
+// 1. Extract the clicked word from the caret position using Unicode-aware word boundaries
+// 2. Join hyphenated words that are split across subtitle lines (e.g. "komplett-" + "eringar")
+// 3. Compute global offset so we can re-find the word after the DOM re-renders on pause
+// 4. Pause video, wait for subtitle DOM to settle, highlight the word, translate via DeepL
 async function handleClick(caret, clientX, clientY, captionElement) {
     const translationId = ++currentTranslationId;
 
@@ -175,6 +205,10 @@ async function handleClick(caret, clientX, clientY, captionElement) {
 
     const text = caret.offsetNode.textContent;
     let offset = caret.offset;
+
+    // Walk backward/forward from the caret to find word boundaries.
+    // Backward includes hyphens (to catch the first half of hyphenated words).
+    // Forward does NOT include hyphens — the continuation is handled by joinHyphenatedWord.
     let start = offset, end = offset;
     while (start > 0 && (/\p{L}|\d|-/u.test(text[start - 1]))) start--;
     while (end < text.length && /\p{L}|\d/u.test(text[end])) end++;
@@ -182,12 +216,14 @@ async function handleClick(caret, clientX, clientY, captionElement) {
     let clickedWord = text.slice(start, end).trim().replace(/[.,!?;:]/g, '');
     if (!clickedWord) return;
 
-    // Handle hyphenated words split across lines: join for translation, keep original for highlighting
     const hyphenResult = joinHyphenatedWord(clickedWord, text, end, captionElement);
     clickedWord = hyphenResult.word;
+    // For highlighting: use the original hyphenated form (e.g. "komplett-eringar") so the
+    // highlight spans match the actual DOM text; use the joined form for translation.
     const highlightWord = hyphenResult.originalForm || clickedWord;
 
-    // Calculate the clicked word's global offset across all subtitle segments before pause
+    // Capture the word's absolute position across all visible segments *before* pausing,
+    // because pausing may cause the site to re-render subtitles (new DOM nodes).
     const globalOffset = getGlobalTextOffset(captionElement, caret.offsetNode, start);
 
     siteConfig.pauseVideo();
@@ -195,10 +231,10 @@ async function handleClick(caret, clientX, clientY, captionElement) {
 
     cleanup();
 
-    // Wait for the site to finish any subtitle re-render triggered by pause
     await waitForSubtitleSettle();
 
-    // Re-query subtitle elements and highlight the correct occurrence
+    // After pause + settle, subtitle DOM may be entirely new nodes. Re-query and use
+    // the saved globalOffset to find and highlight the correct word occurrence.
     const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
     const highlightResult = highlightWordAcrossSegments(segments, highlightWord, globalOffset);
     const currentElement = highlightResult?.element || captionElement;
@@ -206,6 +242,8 @@ async function handleClick(caret, clientX, clientY, captionElement) {
     const wordResult = await browser.runtime.sendMessage({ action: "translate", text: clickedWord });
     if (translationId !== currentTranslationId) return;
 
+    // Determine the full sentence containing the clicked word (for sentence translation on
+    // tooltip click). wordOffset helps disambiguate when the word appears multiple times.
     const sentenceText = getFullSentenceFromSubtitles(clickedWord, currentElement, segments, highlightResult?.wordOffset);
     showTooltip({
         wordTranslation: wordResult.translation,
@@ -237,6 +275,8 @@ async function handleDoubleClick(event, captionElement) {
     });
 }
 
+// Restore subtitle DOM nodes to their pre-highlight state by replacing the current
+// (split + wrapped) children with the saved original childNode clones.
 function restoreHighlights() {
     for (const { el, savedNodes } of lastHighlightedSegments) {
         el.textContent = "";
@@ -252,8 +292,13 @@ function cleanup() {
     restoreHighlights();
 }
 
-const SEGMENT_SEPARATOR_LENGTH = 1; // space between concatenated segments
+// When segments are conceptually joined into one string (for sentence extraction,
+// word-offset matching, etc.), we insert a 1-char separator (space) between them.
+const SEGMENT_SEPARATOR_LENGTH = 1;
 
+// Build an array of absolute character offsets — one per segment — representing where
+// each segment's textContent starts in the virtual concatenated string.
+// E.g. segments ["Hello", "world"] → offsets [0, 6] (5 chars + 1 separator).
 function getSegmentOffsets(segments) {
     const offsets = [];
     let pos = 0;
@@ -264,11 +309,17 @@ function getSegmentOffsets(segments) {
     return offsets;
 }
 
+// Compute the absolute character position of `charStart` within `targetNode` across
+// all visible subtitle segments. This "global offset" survives DOM re-renders (where
+// the actual node references become stale) because it's a numeric position in the
+// concatenated text of all segments.
 function getGlobalTextOffset(clickedSegment, targetNode, charStart) {
     const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
     const segOffsets = getSegmentOffsets(segments);
     for (let i = 0; i < segments.length; i++) {
         if (segments[i] !== clickedSegment) continue;
+        // Walk text nodes within the matching segment to find the target node's
+        // cumulative offset within the segment.
         const walker = document.createTreeWalker(segments[i], NodeFilter.SHOW_TEXT);
         let nodeOffset = segOffsets[i];
         let node;
@@ -276,17 +327,31 @@ function getGlobalTextOffset(clickedSegment, targetNode, charStart) {
             if (node === targetNode) return nodeOffset + charStart;
             nodeOffset += node.textContent.length;
         }
+        // Fallback: targetNode not found (shouldn't happen), use end of segment
         return nodeOffset + charStart;
     }
     return 0;
 }
 
+// Find and highlight a word across all subtitle segments, using globalOffset to
+// disambiguate when the same word appears multiple times.
+//
+// Strategy:
+// 1. Regex-match the word (with Unicode word-boundary lookarounds) across all segments
+// 2. Pick the match whose absolute offset equals globalOffset, or the closest one
+// 3. Walk the text nodes of that segment and wrap the overlapping character range
+//    in <span class="highlight-translate">. This is done node-by-node because the
+//    word may span multiple text nodes (e.g. hyphenated words in separate <span>s).
+//
+// The text-node splitting technique: splitText(pos) splits a text node in two at `pos`.
+// We split twice to isolate the matching portion, then wrap it in a highlight <span>.
+// After splitting, we advance the TreeWalker to the remainder node.
 function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
     const safeWord = clickedWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Lookarounds ensure we match whole words only (no partial matches within longer words)
     const regex = new RegExp(`(?<![\\p{L}\\d])${safeWord}(?![\\p{L}\\d])`, "giu");
     const segOffsets = getSegmentOffsets(segments);
 
-    // Collect all occurrences across all segments with global offsets
     const matches = [];
     for (let i = 0; i < segments.length; i++) {
         const text = segments[i].textContent;
@@ -299,14 +364,11 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
 
     if (matches.length === 0) return null;
 
-    // Pick the exact offset match, falling back to closest
     const best = matches.find(m => m.absOffset === globalOffset)
         || matches.reduce((a, b) =>
             Math.abs(a.absOffset - globalOffset) < Math.abs(b.absOffset - globalOffset) ? a : b
         );
 
-    // Highlight the match — may span multiple text nodes (e.g. "komplett-" and "eringar" in
-    // separate <span>s), so we walk all text nodes and wrap each overlapping portion.
     const seg = best.segment;
     const savedNodes = Array.from(seg.childNodes).map(n => n.cloneNode(true));
     const hlStart = best.index;
@@ -326,6 +388,7 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
             const localStart = overlapStart - nodeStart;
             const localEnd = overlapEnd - nodeStart;
 
+            // Split: [before | matchNode | after]
             const before = node;
             const matchNode = before.splitText(localStart);
             const after = matchNode.splitText(localEnd - localStart);
@@ -347,11 +410,20 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
     return { element: seg, wordOffset: best.absOffset };
 }
 
+// Build and display the translation tooltip.
+// - Initially shows just the translated word (bold, 22px).
+// - Clicking the translated word expands to the full sentence translation, where each
+//   word is individually clickable for reverse translation (target→source language).
+// - Right-clicking the tooltip shows a custom context menu with "Copy" / "Copy original".
+// - `currentOriginal` tracks what "Copy original" should return: starts as the clicked
+//   word, switches to sentenceText when the user expands to sentence view.
 function showTooltip({ wordTranslation, x, y, originalText, sentenceText, translationId }) {
     let currentOriginal = originalText;
     const tooltip = document.createElement("div");
     tooltip.id = "subtitle-translate-tooltip";
 
+    // Position tooltip above the subtitle element (centered horizontally on it).
+    // Falls back to click coordinates if no subtitle element is found.
     const subtitleElement = document.querySelector(SUBTITLE_SELECTOR);
     const subtitleRect = subtitleElement ? subtitleElement.getBoundingClientRect() : null;
 
@@ -378,6 +450,8 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
     document.body.appendChild(tooltip);
     lastTooltip = tooltip;
 
+    // Position in a rAF callback so the browser has laid out the tooltip and we can
+    // read its dimensions. Starts with opacity:0 to avoid a flash at the wrong position.
     requestAnimationFrame(() => {
         const tooltipRect = tooltip.getBoundingClientRect();
         let tooltipTop = y + 10;
@@ -391,6 +465,8 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
         tooltip.style.opacity = "1";
     });
 
+    // Custom right-click context menu on the tooltip (replaces the browser default).
+    // Offers "Copy" (the translation text) and "Copy original" (the source text).
     tooltip.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -412,6 +488,7 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
             fontFamily: "'YouTube Noto', Roboto, Arial, Helvetica, sans-serif",
             fontSize: "14px",
         });
+        // Initially off-screen; repositioned in rAF once dimensions are known
         menu.style.top = "-9999px";
         menu.style.left = "-9999px";
 
@@ -461,6 +538,10 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
         document.addEventListener("click", onClickOutside, true);
     });
 
+    // TODO: `translatedWordElement` is assigned without `const`/`let`, creating an implicit global.
+    // Should be declared with `const`.
+    // Clicking the translated word in the tooltip expands to the full sentence translation.
+    // The sentence highlight replaces the word highlight in the subtitle DOM.
     translatedWordElement = tooltip.querySelector("#translatedWord");
     translatedWordElement.addEventListener("click", async () => {
         currentOriginal = sentenceText;
@@ -475,6 +556,7 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
         restoreHighlights();
         highlightSentenceAcrossSegments(sentenceText);
 
+        // Render each translated word as a clickable span for reverse-translation lookup
         const words = sentenceResult.translation.split(/\s+/);
         sentenceContainer.textContent = "";
         words.forEach((word, i) => {
@@ -486,7 +568,7 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
             sentenceContainer.appendChild(span);
         });
 
-        // Reposition tooltip upward to account for new content height
+        // Reposition tooltip upward since sentence text is taller than a single word
         requestAnimationFrame(() => {
             const newRect = tooltip.getBoundingClientRect();
             if (subtitleRect) {
@@ -494,11 +576,14 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
             }
         });
 
+        // Reverse translation: clicking a word in the translated sentence shows a small
+        // popup above it with the word translated back to the source language.
         sentenceContainer.querySelectorAll('.translated-word').forEach(span => {
             span.addEventListener('click', async () => {
                 const clickedWord = span.textContent.trim().replace(/[.,!?;:]/g, '');
                 const reverseTranslation = await browser.runtime.sendMessage({ action: "translate", text: clickedWord, reverse: true });
 
+                // Reuse existing popup if the same word is clicked again
                 let popup = span.querySelector('.reverse-translation');
                 if (!popup) {
                     popup = document.createElement('div');
@@ -517,13 +602,19 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
     });
 }
 
+// Extract the full sentence containing a clicked word from the visible subtitle segments.
+// Sentences are split on punctuation (.!?) including trailing quotes/brackets.
+//
+// Two strategies:
+// 1. If wordOffset is known (single-click path), find the sentence whose character range
+//    contains that exact offset. This correctly handles duplicate words.
+// 2. Fallback (double-click path, or if offset lookup fails): simple substring search
+//    for the first sentence containing the clicked word text.
 function getFullSentenceFromSubtitles(clickedWord, clickedElement, segments, wordOffset) {
     if (!segments) segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
-    // Use raw textContent joined by spaces — same coordinate system as getSegmentOffsets/wordOffset
     const text = segments.map(s => s.textContent).join(" ");
     const sentenceRegex = /[^.!?]*[.!?]+["')\]]*|[^.!?]+$/g;
 
-    // Use the exact word position to find the sentence containing it
     if (wordOffset !== undefined) {
         let match;
         while ((match = sentenceRegex.exec(text))) {
@@ -533,7 +624,6 @@ function getFullSentenceFromSubtitles(clickedWord, clickedElement, segments, wor
         }
     }
 
-    // Fallback: first sentence containing the word (used by double-click)
     sentenceRegex.lastIndex = 0;
     const lowerClicked = clickedWord.toLowerCase();
     const sentences = text.match(sentenceRegex) || [];
@@ -543,6 +633,18 @@ function getFullSentenceFromSubtitles(clickedWord, clickedElement, segments, wor
     return clickedElement.textContent.trim();
 }
 
+// Highlight an entire sentence across multiple subtitle segments (used for double-click
+// and the expanded sentence view in the tooltip).
+//
+// The challenge: a sentence may span multiple subtitle segment elements (e.g. two
+// .ytp-caption-segment divs or two .vtt-cue-teletext spans). We need to:
+// 1. Build a virtual concatenated string from all segments (trimmed, space-separated)
+// 2. Find the sentence's position in this virtual string (case-insensitive indexOf)
+// 3. For each segment that overlaps the sentence range, walk its text nodes and wrap
+//    the overlapping characters in highlight <span>s
+//
+// `leadingTrim` compensates for the fact that we trim segment text for matching but
+// need raw character positions when splitting DOM text nodes.
 function highlightSentenceAcrossSegments(sentenceText) {
     const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
     let fullText = "";
@@ -571,15 +673,15 @@ function highlightSentenceAcrossSegments(sentenceText) {
         const overlapEnd = Math.min(end, sentenceEnd);
         if (overlapStart >= overlapEnd) continue;
 
-        // Positions relative to the trimmed segment text
+        // Convert from virtual-string coordinates to segment-local coordinates
         const segRelativeStart = overlapStart - start;
         const segRelativeEnd = overlapEnd - start;
 
-        // Adjust to raw text node positions by adding back leading whitespace
+        // Shift back to raw text node positions (undo the trim we did for matching)
         const rawStart = segRelativeStart + leadingTrim;
         const rawEnd = segRelativeEnd + leadingTrim;
 
-        // Walk text nodes and track cumulative offset within the segment
+        // Same text-node-walking + splitText technique as highlightWordAcrossSegments
         const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
         let offset = 0;
         let node;
@@ -595,7 +697,6 @@ function highlightSentenceAcrossSegments(sentenceText) {
                 const localStart = hlStart - nodeStart;
                 const localEnd = hlEnd - nodeStart;
 
-                // Split the text node and wrap the matching portion
                 const before = node;
                 const matchNode = before.splitText(localStart);
                 const after = matchNode.splitText(localEnd - localStart);
@@ -605,7 +706,6 @@ function highlightSentenceAcrossSegments(sentenceText) {
                 matchNode.parentNode.replaceChild(highlight, matchNode);
                 highlight.appendChild(matchNode);
 
-                // Continue walking from the remainder node
                 walker.currentNode = after;
                 offset = hlEnd;
                 continue;
