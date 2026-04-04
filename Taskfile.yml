@@ -1,7 +1,7 @@
 version: "3"
 
 vars:
-  EXT_NAME: subtitle-translator
+  EXT_NAME: clicksub
   VERSION:
     sh: jq -r .version manifest.json
 

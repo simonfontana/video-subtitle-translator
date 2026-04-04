@@ -50,7 +50,7 @@ const SITE_CONFIGS = {
 };
 
 const siteConfig = SITE_CONFIGS[window.location.hostname];
-if (!siteConfig) throw new Error(`[subtitle-translator] No config for ${window.location.hostname}`);
+if (!siteConfig) throw new Error(`[clicksub] No config for ${window.location.hostname}`);
 const SUBTITLE_SELECTOR = siteConfig.subtitleSelector;
 
 // Monotonically increasing ID used to discard stale translation responses.
