@@ -100,9 +100,6 @@ This is necessary because a word/sentence can span multiple text nodes (e.g. in 
 
 ## Known Issues / TODOs
 
-### Bugs
-- `translatedWordElement` in `showTooltip()` is assigned without `const`/`let`, creating an implicit global.
-
 ### Code quality
 - **Highlight code duplication**: `highlightWordAcrossSegments` and `highlightSentenceAcrossSegments` both implement the same text-node-walking + splitText + wrap-in-span technique (~30 lines each). Extract a shared `highlightRangeInSegment(el, rawStart, rawEnd)` helper.
 - **Site config duplication**: YouTube and SVT Play configs are identical except for `subtitleSelector`. A factory like `makeVideoSiteConfig(selector)` would make adding new sites a one-liner.

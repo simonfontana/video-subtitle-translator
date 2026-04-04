@@ -553,11 +553,9 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
         document.addEventListener("click", onClickOutside, true);
     });
 
-    // TODO: `translatedWordElement` is assigned without `const`/`let`, creating an implicit global.
-    // Should be declared with `const`.
     // Clicking the translated word in the tooltip expands to the full sentence translation.
     // The sentence highlight replaces the word highlight in the subtitle DOM.
-    translatedWordElement = tooltip.querySelector("#translatedWord");
+    const translatedWordElement = tooltip.querySelector("#translatedWord");
     translatedWordElement.addEventListener("click", async () => {
         currentOriginal = sentenceText;
         tooltip.textContent = "";
