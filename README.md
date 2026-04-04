@@ -64,6 +64,11 @@ popup.html       - Settings UI (language selection, API key)
 popup.js         - Settings persistence and API key validation
 ```
 
+## AI Assistance
+
+This project was written with the help of [Claude Code](https://claude.ai/code) (Anthropic).
+I am a backend developer without JavaScript experience, so Claude was used to generate and iterate on the extension code throughout development.
+
 ## License
 
 See [LICENSE](LICENSE).
