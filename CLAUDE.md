@@ -14,7 +14,10 @@ A Chrome/Firefox WebExtension (Manifest V2) that integrates with YouTube and SVT
 
 ## Architecture
 
-Three components communicate via `browser.runtime.sendMessage`:
+Four components communicate via `browser.runtime.sendMessage` (plus a shared utility module):
+
+**utils.js** — pure functions shared between `background.js` and Node.js tests:
+- `resolveLanguages(settings, reverse, detectedSourceLang)` — resolves source/target language pair for a DeepL request, handling auto-detect and reverse translation
 
 **content.js** (injected into supported video pages) — handles all user interaction:
 - Site-specific behaviour is configured in the `SITE_CONFIGS` object at the top of the file; add new sites there
@@ -112,16 +115,15 @@ This is necessary because a word/sentence can span multiple text nodes (e.g. in 
 
 ## Testing Plan
 
-No test infrastructure exists yet. Tests should be added incrementally using Node.js built-in test runner (`node --test`). The strategy is to extract pure logic into a shared `utils.js` module that can be `require()`'d from tests and loaded via `<script>` in the extension.
+Tests use Node.js built-in test runner (`node --test`). Pure logic lives in `utils.js`, which can be `require()`'d from tests and loaded via `<script>` in the extension. Run tests with:
 
-### Step 1: Extract and test language resolution logic from `background.js`
+```
+node --test test/*.test.js
+```
 
-The source/target language selection logic (lines 39–46 of `background.js`) handles forward translation, reverse translation, auto-detect, and fallbacks. This is where bugs have occurred (see commit `ad69d5e`). Extract into a pure function `resolveLanguages(settings, reverse, detectedSourceLang)` in `utils.js` and test cases:
-- Forward translation with explicit source/target
-- Reverse translation (source and target swap)
-- Auto-detect source (`"auto"`) with forward translation (omit `source_lang`)
-- Auto-detect + reverse translation using `detectedSourceLang` as target
-- Auto-detect + reverse with missing `detectedSourceLang` (falls back to `"SV"`)
+### ~~Step 1: Extract and test language resolution logic from `background.js`~~ ✓ Done
+
+`resolveLanguages(settings, reverse, detectedSourceLang)` is in `utils.js`. Tests: `test/resolveLanguages.test.js`.
 
 ### Step 2: Extract and test `joinHyphenatedWord`
 

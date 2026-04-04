@@ -36,20 +36,13 @@ async function translateWithDeepL(text, reverse = false, detectedSourceLang = nu
         return { text: "Please enter your DeepL API key in the extension popup." };
     }
 
-    const sourceLang = reverse ? settings.targetLang : settings.sourceLang || "SV";
-    // When sourceLang is "auto" and this is a reverse translation, targetLang would be
-    // "auto" which DeepL rejects. Fall back to the detected_source_language from the
-    // forward translation, or "SV" as a last resort.
-    const rawTargetLang = reverse ? settings.sourceLang : settings.targetLang || "EN";
-    const targetLang = (rawTargetLang === "auto" || !rawTargetLang)
-        ? (detectedSourceLang || "SV")
-        : rawTargetLang;
+    const { sourceLang, targetLang } = resolveLanguages(settings, reverse, detectedSourceLang);
 
     const url = "https://api-free.deepl.com/v2/translate";
 
     const params = new URLSearchParams();
     params.append("text", text);
-    if (sourceLang !== "auto") {
+    if (sourceLang !== null) {
         params.append("source_lang", sourceLang);
     }
     params.append("target_lang", targetLang);
