@@ -113,36 +113,13 @@ This is necessary because a word/sentence can span multiple text nodes (e.g. in 
 - **Paid DeepL API support**: `api-free.deepl.com` is hardcoded in `background.js` and `popup.js`. Users with paid plans need `api.deepl.com`. Could auto-detect from key format (free keys end in `:fx`) or add a popup setting.
 - **Error state leaves video paused**: If `handleClick` throws after pausing the video (e.g. extension context lost), the video stays paused with no tooltip and no way to dismiss. A `try/finally` ensuring cleanup on failure would help.
 
-## Testing Plan
+## Testing
 
-Tests use Node.js built-in test runner (`node --test`). Pure logic lives in `utils.js`, which can be `require()`'d from tests and loaded via `<script>` in the extension. Run tests with:
+Run tests with:
 
 ```
 node --test test/*.test.js
 ```
-
-### ~~Step 1: Extract and test language resolution logic from `background.js`~~ ✓ Done
-
-`resolveLanguages(settings, reverse, detectedSourceLang)` is in `utils.js`. Tests: `test/resolveLanguages.test.js`.
-
-### ~~Step 2: Extract and test `joinHyphenatedWord`~~ ✓ Done
-
-`joinHyphenatedWord(clickedWord, caretText, endOffset, captionElement)` is in `utils.js`. Tests: `test/joinHyphenatedWord.test.js`.
-
-### ~~Step 3: Extract and test word boundary extraction~~ ✓ Done
-
-`extractWordAtOffset(text, offset)` is in `utils.js`. Tests: `test/extractWordAtOffset.test.js`.
-
-### ~~Step 4: Extract and test `getFullSentenceFromSubtitles`~~ ✓ Done
-
-`getFullSentenceFromSubtitles(text, clickedWord, wordOffset)` is in `utils.js`. Takes a pre-joined string and optional character offset. Tests: `test/getFullSentenceFromSubtitles.test.js`.
-
-### Step 5: Test `getSegmentOffsets`
-
-Already pure. Move to `utils.js`. Takes array of `{ textContent }` objects. Test:
-- Single segment
-- Multiple segments (verify separator spacing)
-- Empty segment
 
 ## Adding a New Site
 

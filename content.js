@@ -284,23 +284,6 @@ function cleanup() {
     restoreHighlights();
 }
 
-// When segments are conceptually joined into one string (for sentence extraction,
-// word-offset matching, etc.), we insert a 1-char separator (space) between them.
-const SEGMENT_SEPARATOR_LENGTH = 1;
-
-// Build an array of absolute character offsets — one per segment — representing where
-// each segment's textContent starts in the virtual concatenated string.
-// E.g. segments ["Hello", "world"] → offsets [0, 6] (5 chars + 1 separator).
-function getSegmentOffsets(segments) {
-    const offsets = [];
-    let pos = 0;
-    for (const seg of segments) {
-        offsets.push(pos);
-        pos += seg.textContent.length + SEGMENT_SEPARATOR_LENGTH;
-    }
-    return offsets;
-}
-
 // Compute the absolute character position of `charStart` within `targetNode` across
 // all visible subtitle segments. This "global offset" survives DOM re-renders (where
 // the actual node references become stale) because it's a numeric position in the
