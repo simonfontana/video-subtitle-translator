@@ -227,7 +227,9 @@ async function handleClick(caret, clientX, clientY, captionElement) {
 
     // Determine the full sentence containing the clicked word (for sentence translation on
     // tooltip click). wordOffset helps disambiguate when the word appears multiple times.
-    const sentenceText = getFullSentenceFromSubtitles(clickedWord, currentElement, segments, highlightResult?.wordOffset);
+    const joinedText = segments.map(s => s.textContent).join(" ");
+    const sentenceText = getFullSentenceFromSubtitles(joinedText, clickedWord, highlightResult?.wordOffset)
+        || currentElement.textContent.trim();
     showTooltip({
         wordTranslation: wordResult.translation,
         detectedSourceLang: wordResult.detectedSourceLang || null,
@@ -241,7 +243,12 @@ async function handleClick(caret, clientX, clientY, captionElement) {
 
 async function handleDoubleClick(event, captionElement) {
     const translationId = ++currentTranslationId;
-    const sentenceText = getFullSentenceFromSubtitles(captionElement.innerText.trim(), captionElement);
+    const allSegments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
+    const joinedText = allSegments.map(s => s.textContent).join(" ");
+    const captionText = captionElement.textContent.trim();
+    // Pass captionText as the "word" — substring search works because captionText
+    // is always a verbatim substring of joinedText.
+    const sentenceText = getFullSentenceFromSubtitles(joinedText, captionText) || captionText;
     siteConfig.pauseVideo();
     siteConfig.onResume(() => cleanup());
 
@@ -586,36 +593,6 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
     });
 }
 
-// Extract the full sentence containing a clicked word from the visible subtitle segments.
-// Sentences are split on punctuation (.!?) including trailing quotes/brackets.
-//
-// Two strategies:
-// 1. If wordOffset is known (single-click path), find the sentence whose character range
-//    contains that exact offset. This correctly handles duplicate words.
-// 2. Fallback (double-click path, or if offset lookup fails): simple substring search
-//    for the first sentence containing the clicked word text.
-function getFullSentenceFromSubtitles(clickedWord, clickedElement, segments, wordOffset) {
-    if (!segments) segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
-    const text = segments.map(s => s.textContent).join(" ");
-    const sentenceRegex = /[^.!?]*[.!?]+["')\]]*|[^.!?]+$/g;
-
-    if (wordOffset !== undefined) {
-        let match;
-        while ((match = sentenceRegex.exec(text))) {
-            if (wordOffset >= match.index && wordOffset < match.index + match[0].length) {
-                return match[0].trim();
-            }
-        }
-    }
-
-    sentenceRegex.lastIndex = 0;
-    const lowerClicked = clickedWord.toLowerCase();
-    const sentences = text.match(sentenceRegex) || [];
-    for (let sentence of sentences) {
-        if (sentence.toLowerCase().includes(lowerClicked)) return sentence.trim();
-    }
-    return clickedElement.textContent.trim();
-}
 
 // Highlight an entire sentence across multiple subtitle segments (used for double-click
 // and the expanded sentence view in the tooltip).

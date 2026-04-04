@@ -64,6 +64,34 @@ function extractWordAtOffset(text, offset) {
     return { word, start, end };
 }
 
+// Find the sentence within `text` that contains the clicked word.
+// text:        pre-joined string from all subtitle segments (separated by " ")
+// clickedWord: the word (or phrase) to locate
+// wordOffset:  character offset of clickedWord in text — used to pick the right
+//              sentence when the same word appears more than once. Omit to fall
+//              back to a simple substring search.
+// Returns the trimmed sentence string, or null if not found.
+function getFullSentenceFromSubtitles(text, clickedWord, wordOffset) {
+    const sentenceRegex = /[^.!?]*[.!?]+["')\]]*|[^.!?]+$/g;
+
+    if (wordOffset !== undefined) {
+        let match;
+        while ((match = sentenceRegex.exec(text))) {
+            if (wordOffset >= match.index && wordOffset < match.index + match[0].length) {
+                return match[0].trim();
+            }
+        }
+        sentenceRegex.lastIndex = 0;
+    }
+
+    const lowerClicked = clickedWord.toLowerCase();
+    const sentences = text.match(sentenceRegex) || [];
+    for (const sentence of sentences) {
+        if (sentence.toLowerCase().includes(lowerClicked)) return sentence.trim();
+    }
+    return null;
+}
+
 if (typeof module !== "undefined") {
-    module.exports = { resolveLanguages, joinHyphenatedWord, extractWordAtOffset };
+    module.exports = { resolveLanguages, joinHyphenatedWord, extractWordAtOffset, getFullSentenceFromSubtitles };
 }

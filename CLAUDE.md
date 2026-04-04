@@ -133,13 +133,9 @@ node --test test/*.test.js
 
 `extractWordAtOffset(text, offset)` is in `utils.js`. Tests: `test/extractWordAtOffset.test.js`.
 
-### Step 4: Extract and test `getFullSentenceFromSubtitles`
+### ~~Step 4: Extract and test `getFullSentenceFromSubtitles`~~ ✓ Done
 
-Move to `utils.js`, taking a plain text string and word offset instead of DOM segments. Test cases:
-- Single sentence (returns entire text)
-- Multiple sentences split by `.`, `!`, `?`
-- Word appearing multiple times — offset-based disambiguation
-- Sentence spanning segment boundary
+`getFullSentenceFromSubtitles(text, clickedWord, wordOffset)` is in `utils.js`. Takes a pre-joined string and optional character offset. Tests: `test/getFullSentenceFromSubtitles.test.js`.
 
 ### Step 5: Test `getSegmentOffsets`
 
