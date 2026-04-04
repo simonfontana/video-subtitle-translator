@@ -207,7 +207,8 @@ async function handleClick(caret, clientX, clientY, captionElement) {
 
     // Capture the word's absolute position across all visible segments *before* pausing,
     // because pausing may cause the site to re-render subtitles (new DOM nodes).
-    const globalOffset = getGlobalTextOffset(captionElement, caret.offsetNode, start);
+    const preSegments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
+    const globalOffset = getGlobalTextOffset(preSegments, captionElement, caret.offsetNode, start, document);
 
     siteConfig.pauseVideo();
     siteConfig.onResume(() => cleanup());
@@ -219,7 +220,8 @@ async function handleClick(caret, clientX, clientY, captionElement) {
     // After pause + settle, subtitle DOM may be entirely new nodes. Re-query and use
     // the saved globalOffset to find and highlight the correct word occurrence.
     const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
-    const highlightResult = highlightWordAcrossSegments(segments, highlightWord, globalOffset);
+    const highlightResult = highlightWordAcrossSegments(segments, highlightWord, globalOffset, document);
+    if (highlightResult) lastHighlightedSegments = highlightResult.highlightedSegments;
     const currentElement = highlightResult?.element || captionElement;
 
     const wordResult = await browser.runtime.sendMessage({ action: "translate", text: clickedWord });
@@ -253,7 +255,7 @@ async function handleDoubleClick(event, captionElement) {
     siteConfig.onResume(() => cleanup());
 
     cleanup();
-    highlightSentenceAcrossSegments(sentenceText);
+    lastHighlightedSegments = highlightSentenceAcrossSegments(allSegments, sentenceText, document);
 
     const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
     showTooltip({
@@ -267,123 +269,11 @@ async function handleDoubleClick(event, captionElement) {
     });
 }
 
-// Restore subtitle DOM nodes to their pre-highlight state by replacing the current
-// (split + wrapped) children with the saved original childNode clones.
-function restoreHighlights() {
-    for (const { el, savedNodes } of lastHighlightedSegments) {
-        el.textContent = "";
-        for (const node of savedNodes) {
-            el.appendChild(node);
-        }
-    }
-    lastHighlightedSegments = [];
-}
-
 function cleanup() {
     if (lastTooltip) { lastTooltip.remove(); lastTooltip = null; }
-    restoreHighlights();
+    lastHighlightedSegments = restoreHighlights(lastHighlightedSegments);
 }
 
-// Compute the absolute character position of `charStart` within `targetNode` across
-// all visible subtitle segments. This "global offset" survives DOM re-renders (where
-// the actual node references become stale) because it's a numeric position in the
-// concatenated text of all segments.
-function getGlobalTextOffset(clickedSegment, targetNode, charStart) {
-    const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
-    const segOffsets = getSegmentOffsets(segments);
-    for (let i = 0; i < segments.length; i++) {
-        if (segments[i] !== clickedSegment) continue;
-        // Walk text nodes within the matching segment to find the target node's
-        // cumulative offset within the segment.
-        const walker = document.createTreeWalker(segments[i], NodeFilter.SHOW_TEXT);
-        let nodeOffset = segOffsets[i];
-        let node;
-        while ((node = walker.nextNode())) {
-            if (node === targetNode) return nodeOffset + charStart;
-            nodeOffset += node.textContent.length;
-        }
-        // Fallback: targetNode not found (shouldn't happen), use end of segment
-        return nodeOffset + charStart;
-    }
-    return 0;
-}
-
-// Find and highlight a word across all subtitle segments, using globalOffset to
-// disambiguate when the same word appears multiple times.
-//
-// Strategy:
-// 1. Regex-match the word (with Unicode word-boundary lookarounds) across all segments
-// 2. Pick the match whose absolute offset equals globalOffset, or the closest one
-// 3. Walk the text nodes of that segment and wrap the overlapping character range
-//    in <span class="highlight-translate">. This is done node-by-node because the
-//    word may span multiple text nodes (e.g. hyphenated words in separate <span>s).
-//
-// The text-node splitting technique: splitText(pos) splits a text node in two at `pos`.
-// We split twice to isolate the matching portion, then wrap it in a highlight <span>.
-// After splitting, we advance the TreeWalker to the remainder node.
-function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
-    const safeWord = clickedWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Lookarounds ensure we match whole words only (no partial matches within longer words)
-    const regex = new RegExp(`(?<![\\p{L}\\d])${safeWord}(?![\\p{L}\\d])`, "giu");
-    const segOffsets = getSegmentOffsets(segments);
-
-    const matches = [];
-    for (let i = 0; i < segments.length; i++) {
-        const text = segments[i].textContent;
-        let m;
-        regex.lastIndex = 0;
-        while ((m = regex.exec(text))) {
-            matches.push({ segment: segments[i], index: m.index, length: m[0].length, absOffset: segOffsets[i] + m.index });
-        }
-    }
-
-    if (matches.length === 0) return null;
-
-    const best = matches.find(m => m.absOffset === globalOffset)
-        || matches.reduce((a, b) =>
-            Math.abs(a.absOffset - globalOffset) < Math.abs(b.absOffset - globalOffset) ? a : b
-        );
-
-    const seg = best.segment;
-    const savedNodes = Array.from(seg.childNodes).map(n => n.cloneNode(true));
-    const hlStart = best.index;
-    const hlEnd = best.index + best.length;
-    const walker = document.createTreeWalker(seg, NodeFilter.SHOW_TEXT);
-    let nodeOffset = 0;
-    let node;
-    while ((node = walker.nextNode())) {
-        const nodeLen = node.textContent.length;
-        const nodeStart = nodeOffset;
-        const nodeEnd = nodeOffset + nodeLen;
-
-        const overlapStart = Math.max(hlStart, nodeStart);
-        const overlapEnd = Math.min(hlEnd, nodeEnd);
-
-        if (overlapStart < overlapEnd) {
-            const localStart = overlapStart - nodeStart;
-            const localEnd = overlapEnd - nodeStart;
-
-            // Split: [before | matchNode | after]
-            const before = node;
-            const matchNode = before.splitText(localStart);
-            const after = matchNode.splitText(localEnd - localStart);
-
-            const highlight = document.createElement("span");
-            highlight.className = "highlight-translate";
-            matchNode.parentNode.replaceChild(highlight, matchNode);
-            highlight.appendChild(matchNode);
-
-            walker.currentNode = after;
-            nodeOffset = overlapEnd;
-            if (overlapEnd >= hlEnd) break;
-            continue;
-        }
-        nodeOffset = nodeEnd;
-    }
-
-    lastHighlightedSegments = [{ el: seg, savedNodes }];
-    return { element: seg, wordOffset: best.absOffset };
-}
 
 // Build and display the translation tooltip.
 // - Initially shows just the translated word (bold, 22px).
@@ -527,8 +417,9 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
         const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
         if (translationId !== currentTranslationId) return;
         if (sentenceResult.detectedSourceLang) detectedSourceLang = sentenceResult.detectedSourceLang;
-        restoreHighlights();
-        highlightSentenceAcrossSegments(sentenceText);
+        lastHighlightedSegments = restoreHighlights(lastHighlightedSegments);
+        const sentenceSegments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
+        lastHighlightedSegments = highlightSentenceAcrossSegments(sentenceSegments, sentenceText, document);
 
         // Render each translated word as a clickable span for reverse-translation lookup
         const words = sentenceResult.translation.split(/\s+/);
@@ -574,89 +465,4 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
             });
         });
     });
-}
-
-
-// Highlight an entire sentence across multiple subtitle segments (used for double-click
-// and the expanded sentence view in the tooltip).
-//
-// The challenge: a sentence may span multiple subtitle segment elements (e.g. two
-// .ytp-caption-segment divs or two .vtt-cue-teletext spans). We need to:
-// 1. Build a virtual concatenated string from all segments (trimmed, space-separated)
-// 2. Find the sentence's position in this virtual string (case-insensitive indexOf)
-// 3. For each segment that overlaps the sentence range, walk its text nodes and wrap
-//    the overlapping characters in highlight <span>s
-//
-// `leadingTrim` compensates for the fact that we trim segment text for matching but
-// need raw character positions when splitting DOM text nodes.
-function highlightSentenceAcrossSegments(sentenceText) {
-    const segments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
-    let fullText = "";
-    const segmentData = [];
-
-    for (let el of segments) {
-        const rawText = el.textContent;
-        const trimmed = rawText.trim();
-        const leadingTrim = rawText.length - rawText.trimStart().length;
-        const start = fullText.length;
-        fullText += (fullText ? " " : "") + trimmed;
-        const end = fullText.length;
-        segmentData.push({ el, start, end, savedNodes: Array.from(el.childNodes).map(n => n.cloneNode(true)), leadingTrim });
-    }
-
-    const fullLowerText = fullText.toLowerCase();
-    const lowerSentence = sentenceText.trim().toLowerCase();
-    const sentenceStart = fullLowerText.indexOf(lowerSentence);
-    if (sentenceStart === -1) return;
-    const sentenceEnd = sentenceStart + lowerSentence.length;
-
-    lastHighlightedSegments = [];
-
-    for (const { el, start, end, savedNodes, leadingTrim } of segmentData) {
-        const overlapStart = Math.max(start, sentenceStart);
-        const overlapEnd = Math.min(end, sentenceEnd);
-        if (overlapStart >= overlapEnd) continue;
-
-        // Convert from virtual-string coordinates to segment-local coordinates
-        const segRelativeStart = overlapStart - start;
-        const segRelativeEnd = overlapEnd - start;
-
-        // Shift back to raw text node positions (undo the trim we did for matching)
-        const rawStart = segRelativeStart + leadingTrim;
-        const rawEnd = segRelativeEnd + leadingTrim;
-
-        // Same text-node-walking + splitText technique as highlightWordAcrossSegments
-        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-        let offset = 0;
-        let node;
-        while ((node = walker.nextNode())) {
-            const nodeLen = node.textContent.length;
-            const nodeStart = offset;
-            const nodeEnd = offset + nodeLen;
-
-            const hlStart = Math.max(rawStart, nodeStart);
-            const hlEnd = Math.min(rawEnd, nodeEnd);
-
-            if (hlStart < hlEnd) {
-                const localStart = hlStart - nodeStart;
-                const localEnd = hlEnd - nodeStart;
-
-                const before = node;
-                const matchNode = before.splitText(localStart);
-                const after = matchNode.splitText(localEnd - localStart);
-
-                const highlight = document.createElement("span");
-                highlight.className = "highlight-translate";
-                matchNode.parentNode.replaceChild(highlight, matchNode);
-                highlight.appendChild(matchNode);
-
-                walker.currentNode = after;
-                offset = hlEnd;
-                continue;
-            }
-            offset = nodeEnd;
-        }
-
-        lastHighlightedSegments.push({ el, savedNodes });
-    }
 }

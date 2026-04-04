@@ -19,6 +19,7 @@ tasks:
           background.js
           content.js
           content.css
+          utils.js
           popup.html
           popup.js
           icon.png
@@ -31,7 +32,7 @@ tasks:
     cmds:
       - |
         ok=true
-        for f in manifest.json background.js content.js content.css popup.html popup.js icon.png LICENSE; do
+        for f in manifest.json background.js content.js content.css utils.js popup.html popup.js icon.png LICENSE; do
           if [ ! -f "$f" ]; then
             echo "ERROR: missing $f"
             ok=false

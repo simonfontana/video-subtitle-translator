@@ -123,35 +123,7 @@ node --test test/*.test.js
 
 ## Testing Plan
 
-Step 1-5 are completed.
-
-### Step 6: Test DOM manipulation functions via jsdom
-
-`highlightWordAcrossSegments`, `highlightSentenceAcrossSegments`, and `getGlobalTextOffset` in `content.js` use `document` as an implicit global. Refactor them to accept `doc` as an explicit parameter (same pattern as injecting a database connection in backend code), then move them to `utils.js`. Tests can then inject a `jsdom` document:
-
-```js
-const { JSDOM } = require("jsdom");
-const dom = new JSDOM(`<div class="segment">Han komplett-<span>eringar</span> allt.</div>`);
-const doc = dom.window.document;
-```
-
-Install: `npm install --save-dev jsdom`
-
-Test cases for `highlightWordAcrossSegments`:
-- Word found in a single segment → wraps correct characters in `<span class="highlight-translate">`
-- Word spanning multiple text nodes (hyphenated across spans) → wraps both parts
-- `globalOffset` disambiguation: same word appears twice, correct occurrence is highlighted
-- Word not found → returns `null`, DOM unchanged
-- `restoreHighlights()` removes all highlight spans and restores original nodes
-
-Test cases for `highlightSentenceAcrossSegments`:
-- Sentence contained within one segment
-- Sentence spanning two segments → both get highlight spans
-- Case-insensitive match
-
-Test cases for `getGlobalTextOffset`:
-- Single segment, offset within first text node
-- Multi-segment, offset in second segment accounts for separator
+Step 1-6 are completed.
 
 ### Step 7: Extract and test `buildTranslateParams` from background.js
 

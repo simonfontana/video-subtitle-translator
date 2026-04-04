@@ -57,6 +57,7 @@ You need a DeepL API key (free tier works). Get one at [deepl.com/your-account/k
 
 ```
 manifest.json    - Extension manifest (Manifest V2)
+utils.js         - Shared pure functions (language resolution, highlighting, DOM helpers)
 content.js       - Injected into video pages; handles clicks, highlighting, tooltips
 content.css      - Highlight styles and pointer-events overrides
 background.js    - Receives translation requests, calls DeepL API
