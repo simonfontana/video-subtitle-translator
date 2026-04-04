@@ -113,6 +113,51 @@ This is necessary because a word/sentence can span multiple text nodes (e.g. in 
 - **Paid DeepL API support**: `api-free.deepl.com` is hardcoded in `background.js` and `popup.js`. Users with paid plans need `api.deepl.com`. Could auto-detect from key format (free keys end in `:fx`) or add a popup setting.
 - **Error state leaves video paused**: If `handleClick` throws after pausing the video (e.g. extension context lost), the video stays paused with no tooltip and no way to dismiss. A `try/finally` ensuring cleanup on failure would help.
 
+## Testing Plan
+
+No test infrastructure exists yet. Tests should be added incrementally using Node.js built-in test runner (`node --test`). The strategy is to extract pure logic into a shared `utils.js` module that can be `require()`'d from tests and loaded via `<script>` in the extension.
+
+### Step 1: Extract and test language resolution logic from `background.js`
+
+The source/target language selection logic (lines 39–46 of `background.js`) handles forward translation, reverse translation, auto-detect, and fallbacks. This is where bugs have occurred (see commit `ad69d5e`). Extract into a pure function `resolveLanguages(settings, reverse, detectedSourceLang)` in `utils.js` and test cases:
+- Forward translation with explicit source/target
+- Reverse translation (source and target swap)
+- Auto-detect source (`"auto"`) with forward translation (omit `source_lang`)
+- Auto-detect + reverse translation using `detectedSourceLang` as target
+- Auto-detect + reverse with missing `detectedSourceLang` (falls back to `"SV"`)
+
+### Step 2: Extract and test `joinHyphenatedWord`
+
+Already a standalone function in `content.js`. Move to `utils.js`. Only needs a `captionElement` argument with a `.textContent` property, so tests can pass a plain object. Test cases:
+- Word followed by hyphen + continuation (e.g. "komplett-" / "eringar" → "kompletteringar")
+- Clicking the continuation part (second half of hyphenated word)
+- No hyphen (returns word unchanged)
+- Unicode characters and different hyphen types (U+2010, U+2011)
+
+### Step 3: Extract and test word boundary extraction
+
+The inline logic in `handleClick` (lines 225–229 of `content.js`) that walks backward/forward from a caret offset to find word boundaries. Extract as `extractWordAtOffset(text, offset)` in `utils.js`. Test cases:
+- Word in middle of text
+- Word at start/end of string
+- Punctuation adjacent to word (should be excluded)
+- Unicode letters (Swedish å, ä, ö etc.)
+- Digits within words
+
+### Step 4: Extract and test `getFullSentenceFromSubtitles`
+
+Move to `utils.js`, taking a plain text string and word offset instead of DOM segments. Test cases:
+- Single sentence (returns entire text)
+- Multiple sentences split by `.`, `!`, `?`
+- Word appearing multiple times — offset-based disambiguation
+- Sentence spanning segment boundary
+
+### Step 5: Test `getSegmentOffsets`
+
+Already pure. Move to `utils.js`. Takes array of `{ textContent }` objects. Test:
+- Single segment
+- Multiple segments (verify separator spacing)
+- Empty segment
+
 ## Adding a New Site
 
 1. Inspect the live subtitle DOM while a video is playing (page source will not show subtitle elements)
