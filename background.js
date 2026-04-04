@@ -6,10 +6,11 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "translate") {
         console.log(`[DEBUG] Received translation request: "${request.text}"`);
         const reverse = request.reverse || false;
-        translateWithDeepL(request.text, reverse)
-            .then(translatedText => {
-                console.log(`[DEBUG] Translation successful. Response: "${translatedText}"`);
-                sendResponse({ translation: translatedText });
+        const detectedSourceLang = request.detectedSourceLang || null;
+        translateWithDeepL(request.text, reverse, detectedSourceLang)
+            .then(result => {
+                console.log(`[DEBUG] Translation successful. Response: "${result.text}"`);
+                sendResponse({ translation: result.text, detectedSourceLang: result.detectedSourceLang });
             })
             .catch(error => {
                 console.error("[DEBUG] Translation failed:", error);
@@ -24,21 +25,25 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // for the "reverse translation" feature where clicking a word in the translated
 // sentence shows its meaning back in the original language.
 // When source language is "auto", the source_lang param is omitted entirely so
-// DeepL auto-detects it.
-async function translateWithDeepL(text, reverse = false) {
+// DeepL auto-detects it. For reverse translations with auto-detect, `detectedSourceLang`
+// (from a prior forward translation's detected_source_language) is used as target_lang.
+async function translateWithDeepL(text, reverse = false, detectedSourceLang = null) {
     const settings = await browser.storage.local.get(["sourceLang", "targetLang", "deeplApiKey"]);
 
     const apiKey = settings.deeplApiKey;
     if (!apiKey) {
         console.error("[DEBUG] No DeepL API key set");
-        return "Please enter your DeepL API key in the extension popup.";
+        return { text: "Please enter your DeepL API key in the extension popup." };
     }
 
-    // TODO: When reverse=true and sourceLang is "auto", the reverse target becomes "auto"
-    // which is not a valid target_lang for DeepL. This would cause a silent API error.
-    // Consider falling back to the detected_source_language from DeepL's response.
     const sourceLang = reverse ? settings.targetLang : settings.sourceLang || "SV";
-    const targetLang = reverse ? settings.sourceLang || "SV" : settings.targetLang || "EN";
+    // When sourceLang is "auto" and this is a reverse translation, targetLang would be
+    // "auto" which DeepL rejects. Fall back to the detected_source_language from the
+    // forward translation, or "SV" as a last resort.
+    const rawTargetLang = reverse ? settings.sourceLang : settings.targetLang || "EN";
+    const targetLang = (rawTargetLang === "auto" || !rawTargetLang)
+        ? (detectedSourceLang || "SV")
+        : rawTargetLang;
 
     const url = "https://api-free.deepl.com/v2/translate";
 
@@ -64,13 +69,16 @@ async function translateWithDeepL(text, reverse = false) {
         console.log("[DEBUG] DeepL API raw response:", data);
 
         if (data.translations && data.translations.length > 0) {
-            return data.translations[0].text;
+            return {
+                text: data.translations[0].text,
+                detectedSourceLang: data.translations[0].detected_source_language || null
+            };
         } else {
             console.error("[DEBUG] DeepL response error:", data);
-            return "Translation error";
+            return { text: "Translation error" };
         }
     } catch (error) {
         console.error("[DEBUG] DeepL API fetch error:", error);
-        return "Translation failed";
+        return { text: "Translation failed" };
     }
 }

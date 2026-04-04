@@ -101,7 +101,6 @@ This is necessary because a word/sentence can span multiple text nodes (e.g. in 
 ## Known Issues / TODOs
 
 ### Bugs
-- **Reverse translation breaks with auto-detect**: When `sourceLang` is "auto" and reverse translation is triggered, `targetLang` becomes "auto" which is not a valid DeepL target language. Should fall back to `detected_source_language` from the DeepL API response.
 - `translatedWordElement` in `showTooltip()` is assigned without `const`/`let`, creating an implicit global.
 
 ### Code quality

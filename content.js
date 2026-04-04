@@ -260,6 +260,7 @@ async function handleClick(caret, clientX, clientY, captionElement) {
     const sentenceText = getFullSentenceFromSubtitles(clickedWord, currentElement, segments, highlightResult?.wordOffset);
     showTooltip({
         wordTranslation: wordResult.translation,
+        detectedSourceLang: wordResult.detectedSourceLang || null,
         x: clientX,
         y: clientY,
         originalText: clickedWord,
@@ -280,6 +281,7 @@ async function handleDoubleClick(event, captionElement) {
     const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
     showTooltip({
         wordTranslation: sentenceResult.translation,
+        detectedSourceLang: sentenceResult.detectedSourceLang || null,
         x: event.clientX,
         y: event.clientY,
         originalText: sentenceText,
@@ -430,7 +432,7 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset) {
 // - Right-clicking the tooltip shows a custom context menu with "Copy" / "Copy original".
 // - `currentOriginal` tracks what "Copy original" should return: starts as the clicked
 //   word, switches to sentenceText when the user expands to sentence view.
-function showTooltip({ wordTranslation, x, y, originalText, sentenceText, translationId }) {
+function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, sentenceText, translationId }) {
     let currentOriginal = originalText;
     const tooltip = document.createElement("div");
     tooltip.id = "subtitle-translate-tooltip";
@@ -566,6 +568,7 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
         const sentenceContainer = sentenceDiv;
         const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
         if (translationId !== currentTranslationId) return;
+        if (sentenceResult.detectedSourceLang) detectedSourceLang = sentenceResult.detectedSourceLang;
         restoreHighlights();
         highlightSentenceAcrossSegments(sentenceText);
 
@@ -594,7 +597,7 @@ function showTooltip({ wordTranslation, x, y, originalText, sentenceText, transl
         sentenceContainer.querySelectorAll('.translated-word').forEach(span => {
             span.addEventListener('click', async () => {
                 const clickedWord = span.textContent.trim().replace(/[.,!?;:]/g, '');
-                const reverseTranslation = await browser.runtime.sendMessage({ action: "translate", text: clickedWord, reverse: true });
+                const reverseTranslation = await browser.runtime.sendMessage({ action: "translate", text: clickedWord, reverse: true, detectedSourceLang });
 
                 // Reuse existing popup if the same word is clicked again
                 let popup = span.querySelector('.reverse-translation');
