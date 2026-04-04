@@ -182,30 +182,6 @@ document.addEventListener("dblclick", (event) => {
     handleDoubleClick(event, clickedElement);
 }, true);
 
-// Join a hyphenated word split across subtitle lines within a caption element.
-// e.g. <span>komplett-</span><span>eringar ...</span> → word: "kompletteringar", originalForm: "komplett-eringar"
-// Uses captionElement.textContent (which concatenates all inner spans) as the source of truth.
-// Returns { word, originalForm } — word is for translation, originalForm is for highlighting.
-function joinHyphenatedWord(clickedWord, caretText, endOffset, captionElement) {
-    const fullText = captionElement.textContent;
-    const hyphenChars = '-\u2010\u2011';
-
-    // Case 1: clicked word is followed by a hyphen in its text node
-    if (endOffset < caretText.length && hyphenChars.includes(caretText[endOffset])) {
-        // Find "clickedWord-<continuation>" in the full caption text
-        const re = new RegExp(clickedWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[' + hyphenChars + '](\\p{L}[\\p{L}\\d]*)', 'u');
-        const m = fullText.match(re);
-        if (m) return { word: clickedWord + m[1], originalForm: m[0] };
-    }
-
-    // Case 2: clicked the continuation — check if full text has "<prefix>-clickedWord"
-    const re2 = new RegExp('([\\p{L}\\d]+)[' + hyphenChars + ']' + clickedWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\d])', 'u');
-    const m2 = fullText.match(re2);
-    if (m2) return { word: m2[1] + clickedWord, originalForm: m2[0] };
-
-    return { word: clickedWord, originalForm: null };
-}
-
 // Handle a single-click on a subtitle word:
 // 1. Extract the clicked word from the caret position using Unicode-aware word boundaries
 // 2. Join hyphenated words that are split across subtitle lines (e.g. "komplett-" + "eringar")

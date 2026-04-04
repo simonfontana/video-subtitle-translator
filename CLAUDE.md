@@ -125,13 +125,9 @@ node --test test/*.test.js
 
 `resolveLanguages(settings, reverse, detectedSourceLang)` is in `utils.js`. Tests: `test/resolveLanguages.test.js`.
 
-### Step 2: Extract and test `joinHyphenatedWord`
+### ~~Step 2: Extract and test `joinHyphenatedWord`~~ ✓ Done
 
-Already a standalone function in `content.js`. Move to `utils.js`. Only needs a `captionElement` argument with a `.textContent` property, so tests can pass a plain object. Test cases:
-- Word followed by hyphen + continuation (e.g. "komplett-" / "eringar" → "kompletteringar")
-- Clicking the continuation part (second half of hyphenated word)
-- No hyphen (returns word unchanged)
-- Unicode characters and different hyphen types (U+2010, U+2011)
+`joinHyphenatedWord(clickedWord, caretText, endOffset, captionElement)` is in `utils.js`. Tests: `test/joinHyphenatedWord.test.js`.
 
 ### Step 3: Extract and test word boundary extraction
 
