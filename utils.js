@@ -48,6 +48,22 @@ function joinHyphenatedWord(clickedWord, caretText, endOffset, captionElement) {
     return { word: clickedWord, originalForm: null };
 }
 
+// Extract the word at a given offset within text.
+// Walks backward (including hyphens, to catch the first half of hyphenated words)
+// and forward (excluding hyphens — continuation is handled by joinHyphenatedWord).
+// Returns { word, start, end } where start/end are character offsets into text,
+// or null if no word characters are adjacent to the offset.
+function extractWordAtOffset(text, offset) {
+    let start = offset, end = offset;
+    while (start > 0 && /\p{L}|\d|-/u.test(text[start - 1])) start--;
+    while (end < text.length && /\p{L}|\d/u.test(text[end])) end++;
+
+    const word = text.slice(start, end);
+    if (!word) return null;
+
+    return { word, start, end };
+}
+
 if (typeof module !== "undefined") {
-    module.exports = { resolveLanguages, joinHyphenatedWord };
+    module.exports = { resolveLanguages, joinHyphenatedWord, extractWordAtOffset };
 }

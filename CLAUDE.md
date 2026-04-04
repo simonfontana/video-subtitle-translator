@@ -129,14 +129,9 @@ node --test test/*.test.js
 
 `joinHyphenatedWord(clickedWord, caretText, endOffset, captionElement)` is in `utils.js`. Tests: `test/joinHyphenatedWord.test.js`.
 
-### Step 3: Extract and test word boundary extraction
+### ~~Step 3: Extract and test word boundary extraction~~ ✓ Done
 
-The inline logic in `handleClick` (lines 225–229 of `content.js`) that walks backward/forward from a caret offset to find word boundaries. Extract as `extractWordAtOffset(text, offset)` in `utils.js`. Test cases:
-- Word in middle of text
-- Word at start/end of string
-- Punctuation adjacent to word (should be excluded)
-- Unicode letters (Swedish å, ä, ö etc.)
-- Digits within words
+`extractWordAtOffset(text, offset)` is in `utils.js`. Tests: `test/extractWordAtOffset.test.js`.
 
 ### Step 4: Extract and test `getFullSentenceFromSubtitles`
 

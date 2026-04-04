@@ -195,15 +195,9 @@ async function handleClick(caret, clientX, clientY, captionElement) {
     const text = caret.offsetNode.textContent;
     let offset = caret.offset;
 
-    // Walk backward/forward from the caret to find word boundaries.
-    // Backward includes hyphens (to catch the first half of hyphenated words).
-    // Forward does NOT include hyphens — the continuation is handled by joinHyphenatedWord.
-    let start = offset, end = offset;
-    while (start > 0 && (/\p{L}|\d|-/u.test(text[start - 1]))) start--;
-    while (end < text.length && /\p{L}|\d/u.test(text[end])) end++;
-
-    let clickedWord = text.slice(start, end).trim().replace(/[.,!?;:]/g, '');
-    if (!clickedWord) return;
+    const caretWord = extractWordAtOffset(text, offset);
+    if (!caretWord) return;
+    let { word: clickedWord, start, end } = caretWord;
 
     const hyphenResult = joinHyphenatedWord(clickedWord, text, end, captionElement);
     clickedWord = hyphenResult.word;

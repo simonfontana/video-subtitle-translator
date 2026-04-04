@@ -22,6 +22,7 @@
         "*://www.svtplay.se/*"
       ],
       "js": [
+        "utils.js",
         "content.js"
       ],
       "css": [
