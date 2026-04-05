@@ -43,9 +43,6 @@ let lastTooltip = null;
 // Stores { el, savedNodes } for each segment that was modified by highlighting,
 // so restoreHighlights() can put the original DOM back.
 let lastHighlightedSegments = [];
-// Timer for the 250ms single-click debounce (cleared on dblclick to prevent
-// the single-click handler from also firing).
-let clickTimer = null;
 
 // Find subtitle element at click coordinates — needed when an overlay sits on top of subtitles
 function findSubtitleAt(event) {
@@ -124,10 +121,10 @@ document.addEventListener("click", (event) => {
 }, true);
 
 // Single-click on a subtitle word: translate just that word.
-// We delay 250ms to distinguish from double-click. If a dblclick fires within
-// that window, the timer is cleared and only the dblclick handler runs.
-// The caret position is captured synchronously because the subtitle DOM may be
-// mutated by the site before the 250ms timeout fires (e.g. subtitle line change).
+// Fires immediately for a responsive feel. On double-click, the browser fires
+// a second click with detail=2 before dblclick — we skip that so only the
+// dblclick handler runs. The currentTranslationId mechanism discards any
+// in-flight word translation if a dblclick supersedes it.
 document.addEventListener("click", (event) => {
     const clickedElement = findSubtitleAt(event);
     if (!clickedElement) return;
@@ -135,31 +132,21 @@ document.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
 
+    // Skip the second click of a double-click; dblclick handler takes over.
+    if (event.detail > 1) return;
+
     const caret = caretInSubtitle(event.clientX, event.clientY, clickedElement);
-
-    if (clickTimer) {
-        clearTimeout(clickTimer);
-        clickTimer = null;
-    }
-
-    clickTimer = setTimeout(() => {
-        handleClick(caret, event.clientX, event.clientY, clickedElement);
-    }, 250);
+    handleClick(caret, event.clientX, event.clientY, clickedElement);
 }, true);
 
 // Double-click on a subtitle: translate the full sentence.
-// Cancels any pending single-click timer so only the sentence translation fires.
+// The currentTranslationId bump discards any in-flight single-click translation.
 document.addEventListener("dblclick", (event) => {
     const clickedElement = findSubtitleAt(event);
     if (!clickedElement) return;
 
     event.preventDefault();
     event.stopPropagation();
-
-    if (clickTimer) {
-        clearTimeout(clickTimer);
-        clickTimer = null;
-    }
 
     handleDoubleClick(event, clickedElement);
 }, true);
@@ -198,6 +185,7 @@ async function handleClick(caret, clientX, clientY, captionElement) {
     cleanup();
 
     await waitForSubtitleSettle();
+    if (translationId !== currentTranslationId) return;
 
     // After pause + settle, subtitle DOM may be entirely new nodes. Re-query and use
     // the saved globalOffset to find and highlight the correct word occurrence.
