@@ -79,6 +79,39 @@ describe("highlightWordAcrossSegments", () => {
         assert.equal(seg.querySelector(".highlight-translate"), null);
     });
 
+    it("highlights last word on first line when spans have no whitespace between them", () => {
+        const doc = makeDoc();
+        // SVT Play structure: two <span> lines inside one segment, no whitespace between them.
+        // textContent = "...de få" + "pengar..." = "...de fåpengar..."
+        const seg = makeSeg(doc, [
+            { tag: "span", text: "Det är snällt, men varför ska de få" },
+            { tag: "span", text: "pengar via Sida, våra skattepengar?" },
+        ]);
+
+        const result = highlightWordAcrossSegments([seg], "få", 33, doc);
+
+        assert.notEqual(result, null);
+        const hl = seg.querySelector(".highlight-translate");
+        assert.notEqual(hl, null);
+        assert.equal(hl.textContent, "få");
+    });
+
+    it("highlights first word on second line when spans have no whitespace between them", () => {
+        const doc = makeDoc();
+        const seg = makeSeg(doc, [
+            { tag: "span", text: "Det är snällt, men varför ska de få" },
+            { tag: "span", text: "pengar via Sida, våra skattepengar?" },
+        ]);
+
+        // "pengar" is at raw offset 35 in the concatenated textContent
+        const result = highlightWordAcrossSegments([seg], "pengar", 35, doc);
+
+        assert.notEqual(result, null);
+        const hl = seg.querySelector(".highlight-translate");
+        assert.notEqual(hl, null);
+        assert.equal(hl.textContent, "pengar");
+    });
+
     it("restoreHighlights removes highlight spans and restores original nodes", () => {
         const doc = makeDoc();
         const seg = makeSeg(doc, "Hello world foo");

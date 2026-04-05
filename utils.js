@@ -169,6 +169,43 @@ function highlightRangeInSegment(el, rawStart, rawEnd, doc) {
     }
 }
 
+// Build a searchable text from an element by walking text nodes and inserting
+// a space at node boundaries where there's no existing whitespace. This is
+// needed because element.textContent concatenates child text nodes directly
+// (e.g. <span>få</span><span>pengar</span> → "fåpengar"), which breaks
+// word-boundary detection. Returns the padded text and the positions where
+// spaces were inserted, so match indices can be mapped back to raw offsets.
+function getSearchableText(element, doc) {
+    const walker = doc.createTreeWalker(element, SHOW_TEXT);
+    let text = "";
+    const insertedSpacePositions = [];
+    let prevNode = null;
+    let node;
+    while ((node = walker.nextNode())) {
+        if (prevNode) {
+            const prevEnd = prevNode.textContent.slice(-1);
+            const currStart = node.textContent[0];
+            const hyphenChars = "-\u2010\u2011";
+            if (prevEnd && !/\s/.test(prevEnd) && !hyphenChars.includes(prevEnd) && currStart && !/\s/.test(currStart)) {
+                insertedSpacePositions.push(text.length);
+                text += " ";
+            }
+        }
+        text += node.textContent;
+        prevNode = node;
+    }
+    return { text, insertedSpacePositions };
+}
+
+function searchableIndexToRaw(index, insertedSpacePositions) {
+    let adjustment = 0;
+    for (const pos of insertedSpacePositions) {
+        if (pos < index) adjustment++;
+        else break;
+    }
+    return index - adjustment;
+}
+
 // Find and highlight a word across all subtitle segments, using globalOffset to
 // disambiguate when the same word appears multiple times.
 // Returns { element, wordOffset, highlightedSegments } or null if not found.
@@ -179,11 +216,12 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset, doc) {
 
     const matches = [];
     for (let i = 0; i < segments.length; i++) {
-        const text = segments[i].textContent;
+        const { text, insertedSpacePositions } = getSearchableText(segments[i], doc);
         let m;
         regex.lastIndex = 0;
         while ((m = regex.exec(text))) {
-            matches.push({ segment: segments[i], index: m.index, length: m[0].length, absOffset: segOffsets[i] + m.index });
+            const rawIndex = searchableIndexToRaw(m.index, insertedSpacePositions);
+            matches.push({ segment: segments[i], index: rawIndex, length: m[0].length, absOffset: segOffsets[i] + rawIndex });
         }
     }
 
@@ -269,5 +307,5 @@ function buildTranslateParams(text, resolvedLangs) {
 }
 
 if (typeof module !== "undefined") {
-    module.exports = { resolveLanguages, joinHyphenatedWord, extractWordAtOffset, getFullSentenceFromSubtitles, getSegmentOffsets, getGlobalTextOffset, highlightRangeInSegment, highlightWordAcrossSegments, highlightSentenceAcrossSegments, restoreHighlights, buildTranslateParams };
+    module.exports = { resolveLanguages, joinHyphenatedWord, extractWordAtOffset, getFullSentenceFromSubtitles, getSegmentOffsets, getGlobalTextOffset, getSearchableText, searchableIndexToRaw, highlightRangeInSegment, highlightWordAcrossSegments, highlightSentenceAcrossSegments, restoreHighlights, buildTranslateParams };
 }
