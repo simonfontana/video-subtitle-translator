@@ -53,6 +53,43 @@ You need a DeepL API key (free tier works). Get one at [deepl.com/your-account/k
 5. Click any word in the sentence translation to see its reverse translation
 6. The video resumes when you press play, and the tooltip is automatically dismissed
 
+## Development
+
+### Prerequisites
+
+- **Node.js** (v18+) — for running tests
+- **jsdom** — installed as a dev dependency via npm: `npm install`
+- **[task](https://taskfile.dev/installation/)** — task runner used for build/release
+- **jq** — used by `task bump`/`task build` to read the version from `manifest.json`
+- **zip** — used by `task build` to package the extension
+
+### Running Tests
+
+```
+task test
+```
+
+or directly:
+
+```
+node --test test/*.test.js
+```
+
+### Release Process
+
+1. Bump the version: `task bump`
+2. Build the zip: `task build`
+3. The output is written to `out/clicksub-<version>.zip`, ready for browser store submission.
+
+### Adding a New Site
+
+1. Inspect the live subtitle DOM while a video is playing (the subtitle elements are injected dynamically and won't appear in page source)
+2. Find a stable, semantic CSS selector for the subtitle text element
+3. Add an entry to `SITE_CONFIGS` in `content.js` with `subtitleSelector`, `suppressEvents`, and video control methods
+4. Add the hostname pattern to `content_scripts[0].matches` in `manifest.json`
+5. If the site's subtitle elements have `pointer-events: none`, add a CSS override in `content.css`
+6. Test: single-click word translation, double-click sentence translation, hyphenated words, overlay handling
+
 ## Project Structure
 
 ```

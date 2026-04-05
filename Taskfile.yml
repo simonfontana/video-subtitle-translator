@@ -7,7 +7,7 @@ vars:
 
 tasks:
   default:
-    deps: [validate, build]
+    deps: [validate, test, build]
   build:
     desc: Build the .zip for Firefox extension submission
     deps: [validate]
@@ -52,6 +52,11 @@ tasks:
         new="$major.$((minor + 1))"
         jq --arg v "$new" '.version = $v' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
         echo "Bumped version: $current → $new"
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - node --test test/*.test.js
 
   clean:
     desc: Remove built zip files
