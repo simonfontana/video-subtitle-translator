@@ -283,6 +283,19 @@ function restoreHighlights(highlightedSegments) {
     return [];
 }
 
+// Build URLSearchParams for a DeepL /v2/translate POST request.
+// resolvedLangs: { sourceLang, targetLang } as returned by resolveLanguages().
+// sourceLang may be null (auto-detect) — in that case source_lang is omitted.
+function buildTranslateParams(text, resolvedLangs) {
+    const params = new URLSearchParams();
+    params.append("text", text);
+    if (resolvedLangs.sourceLang !== null) {
+        params.append("source_lang", resolvedLangs.sourceLang);
+    }
+    params.append("target_lang", resolvedLangs.targetLang);
+    return params;
+}
+
 if (typeof module !== "undefined") {
-    module.exports = { resolveLanguages, joinHyphenatedWord, extractWordAtOffset, getFullSentenceFromSubtitles, getSegmentOffsets, getGlobalTextOffset, highlightWordAcrossSegments, highlightSentenceAcrossSegments, restoreHighlights };
+    module.exports = { resolveLanguages, joinHyphenatedWord, extractWordAtOffset, getFullSentenceFromSubtitles, getSegmentOffsets, getGlobalTextOffset, highlightWordAcrossSegments, highlightSentenceAcrossSegments, restoreHighlights, buildTranslateParams };
 }

@@ -121,19 +121,6 @@ Run tests with:
 node --test test/*.test.js
 ```
 
-## Testing Plan
-
-Step 1-6 are completed.
-
-### Step 7: Extract and test `buildTranslateParams` from background.js
-
-Extract the `URLSearchParams` construction logic from `translateWithDeepL` into a pure function `buildTranslateParams(text, resolvedLangs)` in `utils.js`. This is immediately testable without mocking `fetch` or `browser`.
-
-Test cases:
-- `sourceLang` is non-null → `source_lang` appears in params
-- `sourceLang` is null (auto-detect) → `source_lang` is absent from params
-- `text` and `target_lang` are always present
-
 ## Adding a New Site
 
 1. Inspect the live subtitle DOM while a video is playing (page source will not show subtitle elements)

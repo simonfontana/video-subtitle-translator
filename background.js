@@ -40,12 +40,7 @@ async function translateWithDeepL(text, reverse = false, detectedSourceLang = nu
 
     const url = "https://api-free.deepl.com/v2/translate";
 
-    const params = new URLSearchParams();
-    params.append("text", text);
-    if (sourceLang !== null) {
-        params.append("source_lang", sourceLang);
-    }
-    params.append("target_lang", targetLang);
+    const params = buildTranslateParams(text, { sourceLang, targetLang });
 
     try {
         const response = await fetch(url, {
