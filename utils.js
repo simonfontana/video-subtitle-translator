@@ -132,6 +132,43 @@ function getGlobalTextOffset(segments, clickedSegment, targetNode, charStart, do
     return 0;
 }
 
+// Apply highlight spans to a character range [rawStart, rawEnd) within a single element.
+// Walks all text nodes, uses splitText() to isolate the covered portion of each node,
+// and wraps it in a <span class="highlight-translate">. Handles ranges that span
+// multiple text nodes (e.g. SVT Play where each subtitle line is a separate <span>).
+function highlightRangeInSegment(el, rawStart, rawEnd, doc) {
+    const walker = doc.createTreeWalker(el, SHOW_TEXT);
+    let offset = 0;
+    let node;
+    while ((node = walker.nextNode())) {
+        const nodeLen = node.textContent.length;
+        const nodeStart = offset;
+        const nodeEnd = offset + nodeLen;
+
+        const hlStart = Math.max(rawStart, nodeStart);
+        const hlEnd = Math.min(rawEnd, nodeEnd);
+
+        if (hlStart < hlEnd) {
+            const localStart = hlStart - nodeStart;
+            const localEnd = hlEnd - nodeStart;
+
+            const matchNode = node.splitText(localStart);
+            const after = matchNode.splitText(localEnd - localStart);
+
+            const highlight = doc.createElement("span");
+            highlight.className = "highlight-translate";
+            matchNode.parentNode.replaceChild(highlight, matchNode);
+            highlight.appendChild(matchNode);
+
+            walker.currentNode = after;
+            offset = hlEnd;
+            if (offset >= rawEnd) break;
+            continue;
+        }
+        offset = nodeEnd;
+    }
+}
+
 // Find and highlight a word across all subtitle segments, using globalOffset to
 // disambiguate when the same word appears multiple times.
 // Returns { element, wordOffset, highlightedSegments } or null if not found.
@@ -159,39 +196,7 @@ function highlightWordAcrossSegments(segments, clickedWord, globalOffset, doc) {
 
     const seg = best.segment;
     const savedNodes = Array.from(seg.childNodes).map(n => n.cloneNode(true));
-    const hlStart = best.index;
-    const hlEnd = best.index + best.length;
-    const walker = doc.createTreeWalker(seg, SHOW_TEXT);
-    let nodeOffset = 0;
-    let node;
-    while ((node = walker.nextNode())) {
-        const nodeLen = node.textContent.length;
-        const nodeStart = nodeOffset;
-        const nodeEnd = nodeOffset + nodeLen;
-
-        const overlapStart = Math.max(hlStart, nodeStart);
-        const overlapEnd = Math.min(hlEnd, nodeEnd);
-
-        if (overlapStart < overlapEnd) {
-            const localStart = overlapStart - nodeStart;
-            const localEnd = overlapEnd - nodeStart;
-
-            const before = node;
-            const matchNode = before.splitText(localStart);
-            const after = matchNode.splitText(localEnd - localStart);
-
-            const highlight = doc.createElement("span");
-            highlight.className = "highlight-translate";
-            matchNode.parentNode.replaceChild(highlight, matchNode);
-            highlight.appendChild(matchNode);
-
-            walker.currentNode = after;
-            nodeOffset = overlapEnd;
-            if (overlapEnd >= hlEnd) break;
-            continue;
-        }
-        nodeOffset = nodeEnd;
-    }
+    highlightRangeInSegment(seg, best.index, best.index + best.length, doc);
 
     return { element: seg, wordOffset: best.absOffset, highlightedSegments: [{ el: seg, savedNodes }] };
 }
@@ -227,43 +232,10 @@ function highlightSentenceAcrossSegments(segments, sentenceText, doc) {
         const overlapEnd = Math.min(end, sentenceEnd);
         if (overlapStart >= overlapEnd) continue;
 
-        const segRelativeStart = overlapStart - start;
-        const segRelativeEnd = overlapEnd - start;
+        const rawStart = (overlapStart - start) + leadingTrim;
+        const rawEnd = (overlapEnd - start) + leadingTrim;
 
-        const rawStart = segRelativeStart + leadingTrim;
-        const rawEnd = segRelativeEnd + leadingTrim;
-
-        const walker = doc.createTreeWalker(el, SHOW_TEXT);
-        let offset = 0;
-        let node;
-        while ((node = walker.nextNode())) {
-            const nodeLen = node.textContent.length;
-            const nodeStart = offset;
-            const nodeEnd = offset + nodeLen;
-
-            const hlStart = Math.max(rawStart, nodeStart);
-            const hlEnd = Math.min(rawEnd, nodeEnd);
-
-            if (hlStart < hlEnd) {
-                const localStart = hlStart - nodeStart;
-                const localEnd = hlEnd - nodeStart;
-
-                const before = node;
-                const matchNode = before.splitText(localStart);
-                const after = matchNode.splitText(localEnd - localStart);
-
-                const highlight = doc.createElement("span");
-                highlight.className = "highlight-translate";
-                matchNode.parentNode.replaceChild(highlight, matchNode);
-                highlight.appendChild(matchNode);
-
-                walker.currentNode = after;
-                offset = hlEnd;
-                continue;
-            }
-            offset = nodeEnd;
-        }
-
+        highlightRangeInSegment(el, rawStart, rawEnd, doc);
         highlightedSegments.push({ el, savedNodes });
     }
 
@@ -297,5 +269,5 @@ function buildTranslateParams(text, resolvedLangs) {
 }
 
 if (typeof module !== "undefined") {
-    module.exports = { resolveLanguages, joinHyphenatedWord, extractWordAtOffset, getFullSentenceFromSubtitles, getSegmentOffsets, getGlobalTextOffset, highlightWordAcrossSegments, highlightSentenceAcrossSegments, restoreHighlights, buildTranslateParams };
+    module.exports = { resolveLanguages, joinHyphenatedWord, extractWordAtOffset, getFullSentenceFromSubtitles, getSegmentOffsets, getGlobalTextOffset, highlightRangeInSegment, highlightWordAcrossSegments, highlightSentenceAcrossSegments, restoreHighlights, buildTranslateParams };
 }
