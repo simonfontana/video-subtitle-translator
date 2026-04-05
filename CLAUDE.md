@@ -104,7 +104,6 @@ This is necessary because a word/sentence can span multiple text nodes (e.g. in 
 ## Known Issues / TODOs
 
 ### Code quality
-- **Site config duplication**: YouTube and SVT Play configs are identical except for `subtitleSelector`. A factory like `makeVideoSiteConfig(selector)` would make adding new sites a one-liner.
 - **`showTooltip` is ~170 lines of imperative DOM construction**: Consider splitting into smaller functions (`createTooltipShell`, `attachContextMenu`, `attachSentenceExpansion`) for readability.
 
 ### Features to consider
@@ -124,7 +123,7 @@ node --test test/*.test.js
 
 1. Inspect the live subtitle DOM while a video is playing (page source will not show subtitle elements)
 2. Find a stable, semantic CSS selector for the subtitle text element
-3. Add an entry to `SITE_CONFIGS` in `content.js` with `subtitleSelector`, `suppressEvents`, and video control methods
+3. If the site uses a standard `<video>` element, call `makeVideoSiteConfig(selector)` and add the result to `SITE_CONFIGS` in `content.js`; otherwise write a custom config object with `subtitleSelector`, `suppressEvents`, and video control methods
 4. Add the hostname pattern to `content_scripts[0].matches` in `manifest.json`
 5. If the site's subtitle elements have `pointer-events: none`, add a CSS override in `content.css`
 6. Test: single-click word translation, double-click sentence translation, hyphenated words, overlay handling

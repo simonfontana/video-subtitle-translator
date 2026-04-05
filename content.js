@@ -1,9 +1,8 @@
-// TODO: YouTube and SVT Play configs are nearly identical (only selector differs).
-// Consider extracting a shared base config to reduce duplication.
-const SITE_CONFIGS = {
-    "www.youtube.com": {
-        subtitleSelector: ".ytp-caption-segment",
-        suppressEvents: true, // suppress mousedown/pointerdown so we beat YouTube's handlers
+// Factory for sites that use a standard <video> element and only differ by subtitle selector.
+function makeVideoSiteConfig(subtitleSelector) {
+    return {
+        subtitleSelector,
+        suppressEvents: true, // suppress mousedown/pointerdown so we beat the site's handlers
         getVideoElement() {
             return document.querySelector("video");
         },
@@ -24,29 +23,12 @@ const SITE_CONFIGS = {
             video.addEventListener("play", handler);
             return () => video.removeEventListener("play", handler);
         },
-    },
-    "www.svtplay.se": {
-        subtitleSelector: ".vtt-cue-teletext",
-        suppressEvents: true,
-        getVideoElement() {
-            return document.querySelector("video");
-        },
-        pauseVideo() {
-            const video = this.getVideoElement();
-            if (video) video.pause();
-        },
-        resumeVideo() {
-            const video = this.getVideoElement();
-            if (video) video.play();
-        },
-        onResume(callback) {
-            const video = this.getVideoElement();
-            if (!video) return () => {};
-            const handler = () => { callback(); video.removeEventListener("play", handler); };
-            video.addEventListener("play", handler);
-            return () => video.removeEventListener("play", handler);
-        },
-    },
+    };
+}
+
+const SITE_CONFIGS = {
+    "www.youtube.com": makeVideoSiteConfig(".ytp-caption-segment"),
+    "www.svtplay.se":  makeVideoSiteConfig(".vtt-cue-teletext"),
 };
 
 const siteConfig = SITE_CONFIGS[window.location.hostname];
