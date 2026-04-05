@@ -116,7 +116,7 @@ document.addEventListener("click", (event) => {
     if (!lastTooltip) return;
     const isTooltip = lastTooltip.contains(event.target);
     const isContextMenu = document.getElementById("subtitle-translate-context-menu")?.contains(event.target);
-    const isSubtitle = !!event.target.closest(SUBTITLE_SELECTOR);
+    const isSubtitle = !!findSubtitleAt(event);
     if (!isTooltip && !isContextMenu && !isSubtitle) {
         cleanup();
         siteConfig.resumeVideo();
