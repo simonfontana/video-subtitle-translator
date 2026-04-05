@@ -262,17 +262,12 @@ function cleanup() {
 // - Clicking the translated word expands to the full sentence translation, where each
 //   word is individually clickable for reverse translation (target→source language).
 // - Right-clicking the tooltip shows a custom context menu with "Copy" / "Copy original".
-// - `currentOriginal` tracks what "Copy original" should return: starts as the clicked
-//   word, switches to sentenceText when the user expands to sentence view.
-function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, sentenceText, translationId }) {
-    let currentOriginal = originalText;
+// Creates the tooltip shell (container + translated-word header) and appends it to the
+// document. Returns the tooltip element and the subtitle bounding rect (for positioning).
+// Starts with opacity:0 and positions in a rAF callback to avoid a flash at wrong position.
+function createTooltipShell({ wordTranslation, x, y }) {
     const tooltip = document.createElement("div");
     tooltip.id = "subtitle-translate-tooltip";
-
-    // Position tooltip above the subtitle element (centered horizontally on it).
-    // Falls back to click coordinates if no subtitle element is found.
-    const subtitleElement = document.querySelector(SUBTITLE_SELECTOR);
-    const subtitleRect = subtitleElement ? subtitleElement.getBoundingClientRect() : null;
 
     const translatedWordDiv = document.createElement("div");
     translatedWordDiv.id = "translatedWord";
@@ -297,8 +292,11 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
     document.body.appendChild(tooltip);
     lastTooltip = tooltip;
 
-    // Position in a rAF callback so the browser has laid out the tooltip and we can
-    // read its dimensions. Starts with opacity:0 to avoid a flash at the wrong position.
+    // Position tooltip above the subtitle element (centered horizontally on it).
+    // Falls back to click coordinates if no subtitle element is found.
+    const subtitleElement = document.querySelector(SUBTITLE_SELECTOR);
+    const subtitleRect = subtitleElement ? subtitleElement.getBoundingClientRect() : null;
+
     requestAnimationFrame(() => {
         const tooltipRect = tooltip.getBoundingClientRect();
         let tooltipTop = y + 10;
@@ -312,8 +310,13 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
         tooltip.style.opacity = "1";
     });
 
-    // Custom right-click context menu on the tooltip (replaces the browser default).
-    // Offers "Copy" (the translation text) and "Copy original" (the source text).
+    return { tooltip, subtitleRect };
+}
+
+// Attaches a custom right-click context menu to the tooltip.
+// Offers "Copy" (the translation text) and "Copy original" (the source text).
+// `state.currentOriginal` is read at click-time so it reflects sentence-expansion updates.
+function attachContextMenu(tooltip, state) {
     tooltip.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -349,10 +352,7 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
 
         const copyItem = document.createElement("div");
         copyItem.textContent = "Copy";
-        Object.assign(copyItem.style, {
-            padding: "6px 16px",
-            cursor: "pointer",
-        });
+        Object.assign(copyItem.style, { padding: "6px 16px", cursor: "pointer" });
         copyItem.addEventListener("mouseenter", () => { copyItem.style.background = "rgba(255,255,255,0.15)"; });
         copyItem.addEventListener("mouseleave", () => { copyItem.style.background = ""; });
         copyItem.addEventListener("click", () => {
@@ -362,14 +362,11 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
 
         const copyOriginalItem = document.createElement("div");
         copyOriginalItem.textContent = "Copy original";
-        Object.assign(copyOriginalItem.style, {
-            padding: "6px 16px",
-            cursor: "pointer",
-        });
+        Object.assign(copyOriginalItem.style, { padding: "6px 16px", cursor: "pointer" });
         copyOriginalItem.addEventListener("mouseenter", () => { copyOriginalItem.style.background = "rgba(255,255,255,0.15)"; });
         copyOriginalItem.addEventListener("mouseleave", () => { copyOriginalItem.style.background = ""; });
         copyOriginalItem.addEventListener("click", () => {
-            navigator.clipboard.writeText(currentOriginal);
+            navigator.clipboard.writeText(state.currentOriginal);
             dismissMenu();
         });
 
@@ -384,12 +381,14 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
 
         document.addEventListener("click", onClickOutside, true);
     });
+}
 
-    // Clicking the translated word in the tooltip expands to the full sentence translation.
-    // The sentence highlight replaces the word highlight in the subtitle DOM.
+// Wires up sentence-expansion (click the translated word → full sentence view) and
+// reverse translation (click a word in the sentence view → source-language popup).
+function attachSentenceExpansion({ tooltip, subtitleRect, sentenceText, translationId, state }) {
     const translatedWordElement = tooltip.querySelector("#translatedWord");
     translatedWordElement.addEventListener("click", async () => {
-        currentOriginal = sentenceText;
+        state.currentOriginal = sentenceText;
         tooltip.textContent = "";
         const sentenceDiv = document.createElement("div");
         sentenceDiv.id = "translatedSentence";
@@ -398,7 +397,7 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
         const sentenceContainer = sentenceDiv;
         const sentenceResult = await browser.runtime.sendMessage({ action: "translate", text: sentenceText });
         if (translationId !== currentTranslationId) return;
-        if (sentenceResult.detectedSourceLang) detectedSourceLang = sentenceResult.detectedSourceLang;
+        if (sentenceResult.detectedSourceLang) state.detectedSourceLang = sentenceResult.detectedSourceLang;
         lastHighlightedSegments = restoreHighlights(lastHighlightedSegments);
         const sentenceSegments = Array.from(document.querySelectorAll(SUBTITLE_SELECTOR));
         lastHighlightedSegments = highlightSentenceAcrossSegments(sentenceSegments, sentenceText, document);
@@ -428,7 +427,7 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
         sentenceContainer.querySelectorAll('.translated-word').forEach(span => {
             span.addEventListener('click', async () => {
                 const clickedWord = span.textContent.trim().replace(/[.,!?;:]/g, '');
-                const reverseTranslation = await browser.runtime.sendMessage({ action: "translate", text: clickedWord, reverse: true, detectedSourceLang });
+                const reverseTranslation = await browser.runtime.sendMessage({ action: "translate", text: clickedWord, reverse: true, detectedSourceLang: state.detectedSourceLang });
 
                 // Reuse existing popup if the same word is clicked again
                 let popup = span.querySelector('.reverse-translation');
@@ -447,4 +446,13 @@ function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, 
             });
         });
     });
+}
+
+// `state.currentOriginal` tracks what "Copy original" should return: starts as the clicked
+// word, switches to sentenceText when the user expands to sentence view.
+function showTooltip({ wordTranslation, detectedSourceLang, x, y, originalText, sentenceText, translationId }) {
+    const state = { currentOriginal: originalText, detectedSourceLang };
+    const { tooltip, subtitleRect } = createTooltipShell({ wordTranslation, x, y });
+    attachContextMenu(tooltip, state);
+    attachSentenceExpansion({ tooltip, subtitleRect, sentenceText, translationId, state });
 }

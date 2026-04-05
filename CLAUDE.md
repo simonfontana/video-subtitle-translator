@@ -103,9 +103,6 @@ This is necessary because a word/sentence can span multiple text nodes (e.g. in 
 
 ## Known Issues / TODOs
 
-### Code quality
-- **`showTooltip` is ~170 lines of imperative DOM construction**: Consider splitting into smaller functions (`createTooltipShell`, `attachContextMenu`, `attachSentenceExpansion`) for readability.
-
 ### Features to consider
 - **Translation caching**: Every click fires a DeepL request even for previously translated words. A simple in-memory `Map` cache in `background.js` (with a size cap) would reduce API usage and make repeat lookups instant.
 - **Paid DeepL API support**: `api-free.deepl.com` is hardcoded in `background.js` and `popup.js`. Users with paid plans need `api.deepl.com`. Could auto-detect from key format (free keys end in `:fx`) or add a popup setting.
